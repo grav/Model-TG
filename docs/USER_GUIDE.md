@@ -226,8 +226,9 @@ Hold **FUNC** and turn an effect knob to snap its value:
 | positive | maximum | 0 |
 
 Filter ranges from −127 to +127; the other effects have a minimum of 0.
-Each encoder event snaps once, so continuing through further clicks can move
-Filter from one extreme through 0 to the other.
+When Filter snaps to 0, keep holding **FUNC** and turn four more clicks to
+reach an extreme. These clicks are not accelerated; reversing cancels travel.
+Release **FUNC** to clear this hold and start a new snap gesture.
 
 | knob | effect |
 |---|---|
