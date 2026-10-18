@@ -55,6 +55,11 @@ These were each verified on hardware; they save a lot of rediscovery.
   separate store: set `0x4001646a(track, step, slot, value)`, clear
   `0x400164b0`, get `0x4001591e`; slots come from the parameter table at
   `0x4010dce0` (56-byte entries, slot at +4).
+- **Transpose:** `gm_enc_gate` consumes physical Pitch (encoder 2) while
+  `transpose_held` tracks RETRIG, except with SETTINGS or a custom page open.
+  `transpose_steps` walks the selected track's active length, resolves inherited
+  Trig Notes from +712, clamps to 0..127 and writes through `0x40016642`.
+  This adds no audio-thread work. Hardware validation is still needed.
 - **Step flag bit 12** (0x1000) is unused by the OS: nothing tests or sets it,
   and it is saved, loaded and copied with the step. Slide trigs keep their
   mark there. Whether a trig sounds a note: bit 7 when bit 11 is set, else the

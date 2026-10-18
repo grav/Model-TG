@@ -4220,6 +4220,14 @@ KEY_ATKMOD = KEY_PRESET | the modifier the attack dial uses. Track was
 key_hook:
     moveal  %sp@(4),%a0
     movel   %a0@(12),%d0          | exactly what the stock accessor returns
+    | Track RETRIG before page dispatch so its release cannot leave a stale
+    | transpose modifier when a custom page consumes the key.
+    cmpil   #KEY_RETRIG,%d0
+    bnew    kh_transpose_ready
+    movel   %a0@(16),%d1
+    andil   #1,%d1
+    movel   %d1,transpose_held
+kh_transpose_ready:
     tstl    rtg_on
     bnew    kh_rtg                | the retrig page: the trig keys are its
     tstl    sle_on
@@ -7699,6 +7707,36 @@ gt_no:
 | replaces `jsr 0x40006158` at 0x400081ce: (root, event), result unused there
 gm_enc_gate:
     movea.l %sp@(8),%a0
+    moveq   #2,%d0                | physical Pitch knob, independent of machine
+    cmpl    %a0@(12),%d0
+    bnew    gm_g_menu
+    tstl    transpose_held
+    beqw    gm_g_stock
+    tstl    set_held
+    bnew    gm_g_stock
+    tstl    mm_obj                | custom pages own their knobs
+    bnew    gm_g_stock
+    tstl    rtg_on
+    bnew    gm_g_stock
+    tstl    sle_on
+    bnew    gm_g_stock
+    bsr     gm_live
+    tstl    %d0
+    bnew    gm_g_stock
+    movea.l %sp@(8),%a0
+    pea     1                     | no acceleration: whole semitones
+    pea     1
+    movel   %a0,%sp@-
+    jsr     0x4006f73a
+    lea.l   %sp@(12),%sp
+    tstl    %d0
+    beqw    gm_g_transposed
+    jsr     transpose_steps
+gm_g_transposed:
+    moveq   #1,%d0                | consume: do not also change sound Pitch
+    rts
+gm_g_menu:
+    movea.l %sp@(8),%a0
     moveq   #1,%d0
     cmpl    %a0@(12),%d0
     bnes    gm_g_stock
@@ -7714,6 +7752,72 @@ gm_enc_gate:
     rts
 gm_g_stock:
     jmp     0x40006158
+
+| RETRIG + Pitch: d0 = signed semitone delta. Use the selected track's
+| pattern and the same step accessor/setter as sle_seq. Materialize inherited
+| notes (+580 == -1) from the track default (+712), leaving that default and
+| empty steps alone. The stock setter notifies observers and persists notes.
+| Only the active track length is edited. Keeps d2-d7/a2-a6.
+transpose_steps:
+    lea.l   %sp@(-20),%sp
+    moveml  %d2-%d5/%a2,%sp@
+    movel   %d0,%d4
+    jsr     0x400cf866
+    movel   %d0,%sp@-
+    jsr     0x4000f23e
+    addql   #4,%sp
+    tstl    %d0
+    beqw    tsp_out
+    movea.l %d0,%a2
+    movel   %a2,%sp@-
+    jsr     0x40016402
+    addql   #4,%sp
+    movel   %d0,%d3
+    moveq   #0,%d2
+tsp_loop:
+    cmpl    %d3,%d2
+    bgew    tsp_out
+    movea.l %a2@,%a0
+    movea.l %a0@(40),%a0
+    movel   %a2,%sp@-
+    jsr     %a0@
+    addql   #4,%sp
+    tstl    %d0
+    beqw    tsp_out
+    movea.l %d0,%a0
+    movew   %a0@(0,%d2:l:2),%d0
+    btst    #0,%d0
+    beqw    tsp_next
+    moveq   #0,%d5
+    lea.l   %a0@(580),%a1
+    moveb   %a1@(0,%d2:l),%d5
+    cmpil   #255,%d5
+    bnew    tsp_note
+    mvzb    %a0@(712),%d5
+tsp_note:
+    movel   %d5,%d0
+    addl    %d4,%d0
+    bplw    tsp_upper
+    moveq   #0,%d0
+tsp_upper:
+    cmpil   #127,%d0
+    blew    tsp_write
+    moveq   #127,%d0
+tsp_write:
+    cmpl    %d5,%d0
+    beqw    tsp_next              | no change at a note boundary
+    movel   %d0,%sp@-
+    movel   %d2,%sp@-
+    movel   %a2,%sp@-
+    jsr     0x40016642
+    lea.l   %sp@(12),%sp
+tsp_next:
+    addql   #1,%d2
+    braw    tsp_loop
+tsp_out:
+    moveml  %sp@,%d2-%d5/%a2
+    lea.l   %sp@(20),%sp
+    rts
 
 | ---- the rows' closures ----
 | label: a0 = the output String; the string pointer arrives in a1.
@@ -9274,6 +9378,7 @@ sp_out:
 
     .balign 4
 popup_mult:    .long 0   | show_popup: 0 = the stock stay, else N times it
+transpose_held: .long 0  | RETRIG is down: Pitch edits existing step notes
 set_held:      .long 0   | SETTINGS is down (the chords' modifier)
 mod_used:      .long 0   | a chord fired since SETTINGS went down
 sld_keys:      .long 0   | trig keys whose press made a slide (bit per key)
