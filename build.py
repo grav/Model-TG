@@ -384,6 +384,14 @@ jmp(0x4001413e, sym['mc_commit_hook'])
 assert bytes(d[0x400081ce-BASE:0x400081ce-BASE+6])==bytes.fromhex("4eb940006158"), \
     bytes(d[0x400081ce-BASE:0x400081ce-BASE+6]).hex()
 d[0x400081ce-BASE+2:0x400081ce-BASE+6]=struct.pack('>I',sym['gm_enc_gate'])
+# Transpose feedback copies the stock popup primary vtable and calls its text
+# setter. Pin its layout and the timer/fade fields we refresh on each turn.
+assert struct.unpack_from('>II',d,0x40111bc8-BASE)==(0,0x40111bbc), 'Popup RTTI moved'
+assert struct.unpack_from('>I',d,0x40111c1c-BASE)[0]==0x40074562, 'Popup text setter moved'
+assert bytes(d[0x40074562-BASE:0x40074562-BASE+4])==bytes.fromhex('4fefffbc'), 'Popup text setter prologue moved'
+assert bytes(d[0x400749c6-BASE:0x400749c6-BASE+4])==bytes.fromhex('202a0060'), 'Popup timer moved'
+assert bytes(d[0x400749fc-BASE:0x400749fc-BASE+8])==bytes.fromhex('206a0064242a0064'), 'Popup duration moved'
+assert bytes(d[0x40074a14-BASE:0x40074a14-BASE+4])==bytes.fromhex('25400070'), 'Popup fade moved'
 # gran_menu_open copies the list view's vtable group from 0x40108c78 (offset,
 # typeinfo, 17 slots) and replaces slot 2; gm_key_th falls back to that slot's
 # stock thunk and closes through 0x40075ba6, as Return does.

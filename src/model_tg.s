@@ -4226,6 +4226,12 @@ key_hook:
     bnew    kh_transpose_ready
     movel   %a0@(16),%d1
     andil   #1,%d1
+    tstl    %d1
+    beqw    kh_transpose_state
+    tstl    transpose_held         | the accessor reads one press many times
+    bnew    kh_transpose_state
+    clrl    transpose_delta        | a new RETRIG hold starts at zero
+kh_transpose_state:
     movel   %d1,transpose_held
 kh_transpose_ready:
     tstl    rtg_on
@@ -7746,7 +7752,9 @@ gm_enc_gate:
     lea.l   %sp@(12),%sp
     tstl    %d0
     beqw    gm_g_transposed
+    addl    %d0,transpose_delta
     jsr     transpose_steps
+    jsr     transpose_feedback
 gm_g_transposed:
     moveq   #1,%d0                | consume: do not also change sound Pitch
     rts
@@ -7832,6 +7840,78 @@ tsp_next:
 tsp_out:
     moveml  %sp@,%d2-%d5/%a2
     lea.l   %sp@(20),%sp
+    rts
+
+| One stock popup, updated in place while the dial moves. Identify it by a
+| private copy of its primary vtable, scanning live root views each time:
+| no saved object pointer can outlive a dismissed popup. Its stock text setter
+| rebuilds the lines and requests a redraw. Timeout restarts on each turn.
+transpose_feedback:
+    linkw   %fp,#-12
+    movel   %a2,%fp@(-12)
+    lea.l   transpose_fmt,%a0
+    tstl    transpose_delta
+    bplw    tsf_format
+    addql   #1,%a0                | negative %d already supplies its minus
+tsf_format:
+    pea     transpose_delta
+    movel   %a0,%sp@-
+    pea     transpose_text
+    jsr     0x400005cc            | vsprintf(buf, fmt, args)
+    lea.l   %sp@(12),%sp
+    tstl    0x40fe4178
+    beqw    tsf_out
+    jsr     0x400d0974
+    movel   %d0,%sp@-
+    jsr     0x400060d8
+    addql   #4,%sp
+    movea.l %d0,%a1
+    lea.l   %a1@(0x14),%a1        | root view-list sentinel
+    movea.l %a1@,%a0
+tsf_scan:
+    cmpal   %a1,%a0
+    beqw    tsf_new
+    movea.l %a0@(8),%a2
+    movel   #transpose_vt+8,%d0
+    cmpl    %a2@,%d0
+    beqw    tsf_found
+tsf_next:
+    movea.l %a0@,%a0
+    braw    tsf_scan
+tsf_found:
+    tstl    %a2@(0x60)            | a timed-out view may await removal
+    blew    tsf_next
+    movel   %a2@(0x64),%d0
+    movel   %d0,%a2@(0x60)
+    moveq   #4,%d0
+    movel   %d0,%a2@(0x70)        | undo the stock timeout's fade
+    pea     %fp@(-5)
+    pea     transpose_text
+    pea     %fp@(-4)
+    jsr     0x400f980c            | String(this, cstr, tag)
+    lea.l   %sp@(12),%sp
+    pea     %fp@(-4)
+    movel   %a2,%sp@-
+    jsr     0x40074562            | Popup::setText(String), includes redraw
+    addql   #8,%sp
+    pea     %fp@(-4)
+    jsr     0x400f7d5c
+    addql   #4,%sp
+    braw    tsf_out
+tsf_new:
+    lea.l   0x40111bc8,%a0        | RTTI prefix plus primary popup vtable
+    lea.l   transpose_vt,%a1
+    moveq   #21,%d0
+tsf_copy:
+    movel   %a0@+,%a1@+
+    subql   #1,%d0
+    bplw    tsf_copy
+    pea     transpose_text
+    jsr     show_popup
+    addql   #4,%sp
+tsf_out:
+    movea.l %fp@(-12),%a2
+    unlk    %fp
     rts
 
 | ---- the rows' closures ----
@@ -9348,6 +9428,12 @@ show_popup:
     movel   %d3,%sp@-
     jsr     0x400747c0
     addql   #8,%sp
+    lea.l   transpose_text,%a0
+    cmpal   %fp@(8),%a0
+    bnew    sp_normal_vt
+    movea.l %d3,%a0
+    movel   #transpose_vt+8,%a0@  | identify only our live transpose popup
+sp_normal_vt:
     movel   popup_mult,%d0        | a longer stay: the fields Popup's init sets
     beqs    sp_std                | from its multiplier (0x40074676): +0x6c = N,
     movea.l %d3,%a0               | +0x60 (the ticks left, 0x400749b4 counts it
@@ -9393,6 +9479,11 @@ sp_out:
 
     .balign 4
 popup_mult:    .long 0   | show_popup: 0 = the stock stay, else N times it
+transpose_delta: .long 0 | requested semitones in the current RETRIG hold
+transpose_vt:    .space 88 | private stock popup vtable, including RTTI prefix
+transpose_text:  .space 16 | signed 32-bit delta and terminator
+transpose_fmt:   .asciz "+%d"
+    .balign 4
 transpose_held: .long 0  | RETRIG is down: Pitch edits existing step notes
 set_held:      .long 0   | SETTINGS is down (the chords' modifier)
 mod_used:      .long 0   | a chord fired since SETTINGS went down
@@ -16815,7 +16906,7 @@ rs_menu_open:
     lea.l   rs_desc,%a0
     lea.l   gm_cur,%a1
     movel   %a0,%a1@
-    jmp     lm_build              | combined features put this beyond bra.w range
+    jmp     lm_build              | popup feedback puts this beyond bra.w range
 
 | values: a0 = &setting, a1 = its names
 rs_val_src:

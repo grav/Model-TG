@@ -270,6 +270,11 @@ pages within the track's current pattern length; empty steps stay empty.
 Steps using the track's default note get their own transposed note. Notes
 stop at 0 and 127. The edits are saved with the pattern.
 
+A popup shows the accumulated semitone delta for the current **RETRIG** hold,
+such as **+12** or **-5**, and updates as you turn Pitch. Each new hold starts
+from zero. The number counts requested semitone changes; notes at the limits
+still clamp to 0–127. The popup fades after you stop turning.
+
 On a Sampler in Slice mode, changing a step's note selects a different slice.
 Custom Model-TG pages keep their own knob controls.
 
