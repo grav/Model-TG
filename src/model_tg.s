@@ -4220,8 +4220,14 @@ KEY_ATKMOD = KEY_PRESET | the modifier the attack dial uses. Track was
 key_hook:
     moveal  %sp@(4),%a0
     movel   %a0@(12),%d0          | exactly what the stock accessor returns
-    | Track RETRIG before page dispatch so its release cannot leave a stale
-    | transpose modifier when a custom page consumes the key.
+    | Track both chord keys from delivered events, before custom-page dispatch.
+    | Do not mix RETRIG's event state with TRACK's asynchronous scan snapshot.
+    cmpil   #KEY_TRACK,%d0
+    bnew    kh_transpose_retrig
+    movel   %a0@(16),%d1
+    andil   #1,%d1
+    movel   %d1,transpose_track_held
+kh_transpose_retrig:
     cmpil   #KEY_RETRIG,%d0
     bnew    kh_transpose_ready
     movel   %a0@(16),%d1
@@ -7784,10 +7790,7 @@ transpose_enc:
     movel   %d0,%d3
     cmpil   #6,%d3
     bccw    tse_out
-    pea     KEY_TRACK
-    jsr     0x4007faf4           | same held-key query as stock control-all
-    addql   #4,%sp
-    movel   %d0,%d4
+    movel   transpose_track_held,%d4 | same event-state source as RETRIG
     jsr     0x400cf9a8
     pea     15
     movel   %d0,%sp@-
@@ -9605,6 +9608,7 @@ popup_mult:    .long 0   | show_popup: 0 = the stock stay, else N times it
 transpose_view:  .long 0 | live-view identity, never used as a saved pointer
 transpose_track: .long -1
 transpose_delta: .long 0 | requested semitones in the active stock context
+transpose_track_held: .long 0 | independent TRACK press/release state
 transpose_all:   .long 0 | last dial scope; baseline may cover both scopes
 transpose_fmt:   .asciz "+%d"
 transpose_all_pos: .asciz "ALL +%d"
