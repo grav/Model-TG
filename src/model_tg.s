@@ -16815,7 +16815,7 @@ rs_menu_open:
     lea.l   rs_desc,%a0
     lea.l   gm_cur,%a1
     movel   %a0,%a1@
-    braw    lm_build
+    jmp     lm_build              | combined features put this beyond bra.w range
 
 | values: a0 = &setting, a1 = its names
 rs_val_src:
