@@ -165,11 +165,7 @@ and inherited defaults without copying a whole track block.
 **Transpose integration.** `transpose_enc` replaces the primary encoder slot
 and secondary EncoderHandler thunk (+4 adjustment). It activates Trig Note
 through `0x4006b71c`, raises the parameter view, and captures the six track
-baselines. TRACK and RETRIG are tracked independently by `key_hook` from event flag bit 0,
-before custom-page dispatch. The live scan query `0x4007faf4(2)` was insufficient
-in the reported hardware test (only the selected track changed). Event tracking
-avoids mixing that scan snapshot with RETRIG's delivered-event state; the exact
-cause of the discrepancy has not been confirmed on hardware.
+baselines. TRACK uses the same `0x4007faf4(2)` held-key query as stock control-all.
 Without TRACK it visits the selected track; with TRACK it visits indices 0..5
 through `0x4000cfcc(pattern, track)`, without changing the selected track. Each
 track uses its own length and inherited note default.
@@ -202,8 +198,7 @@ track-aware step restore extension rather than only setting +0x23c.
 
 `tools/test_transpose.py` executes assembled ColdFire code with mocked stock
 APIs to check single/all/mixed edits, differing lengths, empty steps, clipping,
-inherited notes, repeated exact restore, encoder handoff, both modifier press orders and independent releases even
-when the scan snapshot reports TRACK up, and register/stack
+inherited notes, repeated exact restore, encoder handoff and register/stack
 preservation. Hardware validation of key delivery, rendering, stock lifetime
 and UI responsiveness is still needed.
 

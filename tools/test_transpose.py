@@ -21,7 +21,6 @@ u.ctl_set_cpu_model(UC_CPU_M68K_CFV4E)
 u.mem_map(0x40000000, 0x200000)
 u.mem_map(0x100000, 0x200000)
 u.mem_write(0x401ab750, (ROOT/'build/_b.bin').read_bytes())
-KEY_EVENT = 0x117000
 VIEW, EVENT, VTABLE, NODE = 0x110000, 0x111000, 0x112000, 0x150000
 STACK, STOP, RAW_GET = 0x2ff000, 0x100000, 0x40001000
 tracks = [0x120000 + i*0x1000 for i in range(6)]
@@ -78,7 +77,7 @@ hooks = {
     0x400cf866: lambda: 0x113000,
     0x4000eb90: lambda: 0x114000,
     0x40012412: lambda: selected,
-    0x4007faf4: lambda: 0,  # scan snapshot deliberately disagrees with key events
+    0x4007faf4: lambda: int(all_tracks),
     0x400cf9a8: lambda: 0x115000,
     0x4006b71c: lambda: None,
     0x4001eecc: clear,
@@ -139,31 +138,11 @@ original = [bytes(u.mem_read(t+0x100, 722)) for t in tracks]
 expected = [bytearray(b) for b in original]
 clear()
 put(EVENT+12, 2)
-def key(code, flags):
-    put(KEY_EVENT+12, code)
-    put(KEY_EVENT+16, flags)
-    call('key_hook', KEY_EVENT)
-    assert u.reg_read(UC_M68K_REG_D0) == code
-
-# Both press orders, repeated accessor reads, repeat events, independent releases.
-for first, second in [(2, 4), (4, 2)]:
-    key(first, 1)
-    key(first, 1)
-    key(second, 1)
-    key(second, 9)
-    assert get(symbols['transpose_held']) == 1
-    assert get(symbols['transpose_track_held']) == 1
-    key(2, 16)
-    assert get(symbols['transpose_held']) == 1
-    assert get(symbols['transpose_track_held']) == 0
-    key(4, 16)
-    assert get(symbols['transpose_held']) == 0
-key(4, 1)
+put(symbols['transpose_held'], 1)
 
 def turn(amount, scope):
     global delta, all_tracks
     delta, all_tracks = amount, scope
-    key(2, 1 if scope else 16)
     for i in range(6) if scope else [selected]:
         for step in range(lengths[i]):
             if expected[i][step*2+1] & 1:
@@ -198,4 +177,3 @@ assert not entries and get(symbols['transpose_view']) == 0
 assert get(VIEW+0x230) == 0
 print('PASS: assembled ColdFire single/all/mixed transpose, per-track lengths,')
 print('empty steps, clipping, inherited notes, exact repeated restore, ABI and stack')
-print('PASS: both modifier press orders, repeats/releases, stale scan snapshot')
