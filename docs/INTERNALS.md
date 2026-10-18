@@ -199,8 +199,15 @@ track-aware step restore extension rather than only setting +0x23c.
 `tools/test_transpose.py` executes assembled ColdFire code with mocked stock
 APIs to check single/all/mixed edits, differing lengths, empty steps, clipping,
 inherited notes, repeated exact restore, encoder handoff and register/stack
-preservation. Hardware validation of key delivery, rendering, stock lifetime
-and UI responsiveness is still needed.
+preservation.
+
+**Hardware validation (2026-10-18).** The user confirmed all-track transpose
+and BACK restore in the diagnostic build using the stock TRACK scan query.
+Both TRACK and RETRIG displayed event-held=1 and scan-held=1. The extra TRACK
+event-state workaround was removed; production builds use the stock query and
+omit the diagnostic overlay. This confirms the chord and revert on hardware;
+exhaustive timing, performance and edge-case coverage remains emulator-only
+where tested above.
 
 ## What each part does, and how
 
