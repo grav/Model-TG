@@ -387,6 +387,8 @@ d[0x400081ce-BASE+2:0x400081ce-BASE+6]=struct.pack('>I',sym['gm_enc_gate'])
 # Transpose feedback copies the stock popup primary vtable and calls its text
 # setter. Pin its layout and the timer/fade fields we refresh on each turn.
 assert struct.unpack_from('>II',d,0x40111bc8-BASE)==(0,0x40111bbc), 'Popup RTTI moved'
+assert struct.unpack_from('>I',d,0x40111bd8-BASE)[0]==0x40074a2c, 'Popup key handler moved'
+assert bytes(d[0x40074a2c-BASE:0x40074a2c-BASE+4])==bytes.fromhex('4feffff4'), 'Popup key prologue moved'
 assert struct.unpack_from('>I',d,0x40111c1c-BASE)[0]==0x40074562, 'Popup text setter moved'
 assert bytes(d[0x40074562-BASE:0x40074562-BASE+4])==bytes.fromhex('4fefffbc'), 'Popup text setter prologue moved'
 assert bytes(d[0x400749c6-BASE:0x400749c6-BASE+4])==bytes.fromhex('202a0060'), 'Popup timer moved'

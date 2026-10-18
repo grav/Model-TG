@@ -275,6 +275,13 @@ such as **+12** or **-5**, and updates as you turn Pitch. Each new hold starts
 from zero. The number counts requested semitone changes; notes at the limits
 still clamp to 0–127. The popup fades after you stop turning.
 
+Press **BACK** while the transpose popup is visible to undo that RETRIG hold,
+just like parameter revert. This restores the original step notes exactly,
+including notes that hit the pitch limits and steps using the track default.
+Undo is available until the popup times out or another edit/key action takes
+precedence; it does not undo unrelated edits. Starting another RETRIG hold
+starts a new undo gesture.
+
 On a Sampler in Slice mode, changing a step's note selects a different slice.
 Custom Model-TG pages keep their own knob controls.
 
