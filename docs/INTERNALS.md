@@ -100,6 +100,85 @@ These were each verified on hardware; they save a lot of rediscovery.
   `0x8000b990`, which `0x400565c6` then scales x4 for the output.
 - **Sample format** in internal storage: see [notes/sample_format.md](notes/sample_format.md).
 
+## Stock BACK parameter revert (OS 1.13)
+
+These findings come from static inspection of the user's stock OS 1.13,
+with the dispatch table, calls, timer constants and Trig Note setter paths
+checked against that image. They are not additional hardware-test results.
+Function names below describe inferred roles, not recovered source symbols.
+
+The ordinary parameter display owns one active revert context, rather than
+an edit-history stack. Its primary vtable is `0x4010052c`; key slot +8 points
+to `0x4001f97e`, encoder slot +0x44 to `0x4001f4f0`, and tick slot +0x2c to
+`0x4001efaa`. This is the parameter view itself, not the generic text popup
+used by transpose.
+
+| Parameter-view offset | Observed use |
+|---|---|
+| +0x1fc..+0x210 | Six saved 32-bit track values for the active parameter |
+| +0x214 | Tree container for original per-step values |
+| +0x21c / +0x220 / +0x224 / +0x228 | Tree root / first / last / entry count |
+| +0x22c | Active encoder index |
+| +0x230 | Active parameter ID (zero ends the context) |
+| +0x234 | Selected track index |
+| +0x238 | Inactivity countdown in UI ticks |
+| +0x23c | Restore-all-tracks flag, set by the all-track encoder path |
+| +0x23d | Changed-value display flag, cleared after BACK revert |
+| +0x23e | Separate BACK-held live-recording removal mode |
+
+**Capture.** At `0x4001f72a`, the encoder handler compares the parameter ID
+and selected track with the active context. When either changes, it updates
+those fields and calls `0x4001ddb2(view, parameter)` to read and save the
+parameter's value on each of the six tracks. Each parameter turn refreshes
++0x238 to 60 at `0x4001f760`.
+
+For step edits, `0x4001e93e` arranges a selected-step callback at
+`0x4001f15a`. The callback reads the step's previous value through the view's
++0x60 virtual, searches the tree by step index, and inserts `{step, value}`
+only if that step has no entry yet (`0x400d8956` at `0x4001f2a0`). Thus repeated
+edits retain the first value. Nodes carry the step at +16 and saved value at
++20. The callback also performs edit preparation/application; it is not a
+standalone snapshot API.
+
+**BACK.** Key 12's table entry in `0x4001f97e` leads to `0x4001f9ec`.
+Outside the separate BACK-held mode, a click with event flag bit 1 clear
+reverts when +0x230 is nonzero. The path at `0x4001fada` first calls
+`0x4001e366(view)` to restore saved steps, then `0x4001de00(view, track)` to
+restore the track value (or all six tracks when +0x23c is set). It redraws,
+sets the timer to 15, and clears +0x23d. It does not swap the saved values
+with the edited ones: this path is revert, not undo/redo toggling.
+
+Step restoration traverses the tree. A saved value of -1 calls the view's
++0x88 virtual to remove the step override; other values go through the
+parameter handle's +0x28 setter. The track restore routine uses the six
+saved values and the ordinary parameter-setting path `0x4000b274`.
+
+**Expiry.** `0x4001efaa` decrements a positive countdown. At zero, subject to
+the edit-state check `0x4006b736` and the separate BACK-held mode being off,
+it calls `0x4001ef0e`. That routine clears the active parameter/encoder/track,
+resets flags, and invokes `0x4001eecc` to clear the saved values and free the
+step tree. There is also a track-selection observer at `0x4001eff8` that
+clears the step tree on a track change. The 60/15 tick constants are verified;
+their exact wall-clock durations have not been measured here.
+
+**Relevance to transpose.** The stock per-step mechanism already supports
+Trig Note (parameter 0x0f), not only sound p-locks. Its parameter-handle getter
+`0x4000aaee` returns an explicit note in Q8 units or exactly -1 for an inherited
+note. Setter `0x4000abdc` converts Q8 back to the note byte and calls
+`0x40016642`; clear `0x4000ace8` calls that same setter with -1. Therefore the
+stock restore machinery can represent multiple original notes, clipping,
+and inherited defaults without copying a whole track block.
+
+Reusing it is feasible in principle, but not implemented by this investigation.
+It needs the live parameter-view instance, correct parameter/track/edit-state
+ownership, original step-tree entries and track values, and a route from the
+transpose display to that view's BACK handling. It must also account for the
+stock RETRIG key's context-ending path and avoid presenting the sound Pitch
+parameter as the edited parameter. Simply calling `0x40016642` does not
+register an undo operation. The current transpose implementation still uses
+its own snapshots and popup key handler; its RETRIG-hold grouping and strict
+post-edit block check differ from stock's parameter/track context.
+
 ## What each part does, and how
 
 - Sampler machine (index 6), assignable to any track
