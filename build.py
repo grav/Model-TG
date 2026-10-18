@@ -384,16 +384,25 @@ jmp(0x4001413e, sym['mc_commit_hook'])
 assert bytes(d[0x400081ce-BASE:0x400081ce-BASE+6])==bytes.fromhex("4eb940006158"), \
     bytes(d[0x400081ce-BASE:0x400081ce-BASE+6]).hex()
 d[0x400081ce-BASE+2:0x400081ce-BASE+6]=struct.pack('>I',sym['gm_enc_gate'])
-# Transpose feedback copies the stock popup primary vtable and calls its text
-# setter. Pin its layout and the timer/fade fields we refresh on each turn.
-assert struct.unpack_from('>II',d,0x40111bc8-BASE)==(0,0x40111bbc), 'Popup RTTI moved'
-assert struct.unpack_from('>I',d,0x40111bd8-BASE)[0]==0x40074a2c, 'Popup key handler moved'
-assert bytes(d[0x40074a2c-BASE:0x40074a2c-BASE+4])==bytes.fromhex('4feffff4'), 'Popup key prologue moved'
-assert struct.unpack_from('>I',d,0x40111c1c-BASE)[0]==0x40074562, 'Popup text setter moved'
-assert bytes(d[0x40074562-BASE:0x40074562-BASE+4])==bytes.fromhex('4fefffbc'), 'Popup text setter prologue moved'
-assert bytes(d[0x400749c6-BASE:0x400749c6-BASE+4])==bytes.fromhex('202a0060'), 'Popup timer moved'
-assert bytes(d[0x400749fc-BASE:0x400749fc-BASE+8])==bytes.fromhex('206a0064242a0064'), 'Popup duration moved'
-assert bytes(d[0x40074a14-BASE:0x40074a14-BASE+4])==bytes.fromhex('25400070'), 'Popup fade moved'
+# Transpose uses the actual parameter view and stock revert storage. Both
+# encoder entry points must agree about `this` (secondary interface is +4).
+for _addr, _original_handler, _hook in ((0x40100570, 0x4001f4f0, 'transpose_enc'),
+                              (0x401005d0, 0x4001f976, 'transpose_enc_th')):
+    assert struct.unpack_from('>I', d, _addr-BASE)[0] == _original_handler, 'Parameter encoder moved'
+    struct.pack_into('>I', d, _addr-BASE, sym[_hook])
+for _addr, _original_handler in ((0x40100534, 0x4001f97e), (0x40100558, 0x4001efaa)):
+    assert struct.unpack_from('>I', d, _addr-BASE)[0] == _original_handler, 'Stock revert handler moved'
+# Pin the stock context layout and the helper entry points used by transpose.
+for _addr, _bytes in (
+    (0x4001f976, '59af00046000fb74'),   # secondary `this` adjustment
+    (0x4001ddb2, '4feffff048d70c0c'),   # six-track capture
+    (0x4001eecc, '2f0b2f0a246f000c'),   # clear saved values/tree
+    (0x400d8956, '4fefffe448d73c1c'),   # unique step-tree insertion
+    (0x4001f760, '703c25400238'),       # refresh to 60 UI ticks
+    (0x4001f73a, '25430230254602342540022c'), # param/track/encoder
+    (0x4001f29a, '41e802142f084eb9400d8956'), # stock tree +0x214
+):
+    assert bytes(d[_addr-BASE:_addr-BASE+len(bytes.fromhex(_bytes))]) == bytes.fromhex(_bytes), hex(_addr)
 # gran_menu_open copies the list view's vtable group from 0x40108c78 (offset,
 # typeinfo, 17 slots) and replaces slot 2; gm_key_th falls back to that slot's
 # stock thunk and closes through 0x40075ba6, as Return does.

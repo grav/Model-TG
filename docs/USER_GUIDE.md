@@ -270,17 +270,17 @@ pages within the track's current pattern length; empty steps stay empty.
 Steps using the track's default note get their own transposed note. Notes
 stop at 0 and 127. The edits are saved with the pattern.
 
-A popup shows the accumulated semitone delta for the current **RETRIG** hold,
-such as **+12** or **-5**, and updates as you turn Pitch. Each new hold starts
-from zero. The number counts requested semitone changes; notes at the limits
-still clamp to 0–127. The popup fades after you stop turning.
+The parameter display shows the accumulated semitone delta, such as **+12**
+or **-5**, and updates as you turn Pitch. The number counts requested changes;
+notes at the limits still clamp to 0–127.
 
-Press **BACK** while the transpose popup is visible to undo that RETRIG hold,
-just like parameter revert. This restores the original step notes exactly,
-including notes that hit the pitch limits and steps using the track default.
-Undo is available until the popup times out or another edit/key action takes
-precedence; it does not undo unrelated edits. Starting another RETRIG hold
-starts a new undo gesture.
+Press **BACK** while the parameter display is active to revert the transpose.
+This uses the stock parameter-revert context and timeout, restoring original
+step notes exactly, including clipped notes and inherited track defaults.
+Repeated turns share that context until stock ends it (for example, on expiry
+or a parameter change); releasing RETRIG alone does not create a new baseline.
+BACK shows **+0** and uses stock's shorter post-revert timeout. It is revert,
+not an undo/redo toggle.
 
 On a Sampler in Slice mode, changing a step's note selects a different slice.
 Custom Model-TG pages keep their own knob controls.
