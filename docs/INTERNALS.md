@@ -63,7 +63,13 @@ These were each verified on hardware; they save a lot of rediscovery.
   encoder deltas. `transpose_feedback` finds its live stock popup by a private
   primary-vtable copy, updates text through `0x40074562`, and refreshes its
   timeout. No popup object pointer is retained after an event.
-  This adds no audio-thread work. Popup hardware validation is still needed.
+  Its private key slot wraps `0x40074a2c`: an unmodified BACK click while
+  the popup timer is live restores the pre-gesture raw notes through the stock
+  setter, then closes normally. Two 722-byte snapshots preserve inherited
+  notes and clipping; undo first verifies the current track identity and the
+  entire post-edit block. Other keys/encoder edits invalidate the snapshot.
+  No saved track pointer is dereferenced. This adds no audio-thread work.
+  Popup and BACK revert hardware validation is still needed.
 - **Step flag bit 12** (0x1000) is unused by the OS: nothing tests or sets it,
   and it is saved, loaded and copied with the step. Slide trigs keep their
   mark there. Whether a trig sounds a note: bit 7 when bit 11 is set, else the

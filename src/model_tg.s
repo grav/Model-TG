@@ -4231,9 +4231,18 @@ key_hook:
     tstl    transpose_held         | the accessor reads one press many times
     bnew    kh_transpose_state
     clrl    transpose_delta        | a new RETRIG hold starts at zero
+    clrl    transpose_valid
 kh_transpose_state:
     movel   %d1,transpose_held
 kh_transpose_ready:
+    cmpil   #KEY_RETRIG,%d0
+    beqw    kh_transpose_keep
+    cmpil   #MM_KEY_RETURN,%d0
+    beqw    kh_transpose_keep
+    btst    #0,%a0@(19)
+    beqw    kh_transpose_keep
+    clrl    transpose_valid        | another key action ends parameter revert
+kh_transpose_keep:
     tstl    rtg_on
     bnew    kh_rtg                | the retrig page: the trig keys are its
     tstl    sle_on
@@ -7759,6 +7768,7 @@ gm_g_menu:
     moveq   #1,%d0
     rts
 gm_g_stock:
+    clrl    transpose_valid        | another encoder edit owns BACK now
     jmp     0x40006158
 
 | RETRIG + Pitch: d0 = signed semitone delta. Use the selected track's
@@ -7775,23 +7785,32 @@ transpose_steps:
     jsr     0x4000f23e
     addql   #4,%sp
     tstl    %d0
-    beqw    tsp_out
+    beqw    tsp_invalid
     movea.l %d0,%a2
     movel   %a2,%sp@-
     jsr     0x40016402
     addql   #4,%sp
     movel   %d0,%d3
-    moveq   #0,%d2
-tsp_loop:
-    cmpl    %d3,%d2
-    bgew    tsp_out
     movea.l %a2@,%a0
     movea.l %a0@(40),%a0
     movel   %a2,%sp@-
     jsr     %a0@
     addql   #4,%sp
     tstl    %d0
-    beqw    tsp_out
+    beqw    tsp_invalid
+    movea.l %d0,%a0
+    jsr     transpose_snapshot
+    moveq   #0,%d2
+tsp_loop:
+    cmpl    %d3,%d2
+    bgew    tsp_saved
+    movea.l %a2@,%a0
+    movea.l %a0@(40),%a0
+    movel   %a2,%sp@-
+    jsr     %a0@
+    addql   #4,%sp
+    tstl    %d0
+    beqw    tsp_invalid
     movea.l %d0,%a0
     movew   %a0@(0,%d2:l:2),%d0
     btst    #0,%d0
@@ -7822,6 +7841,24 @@ tsp_write:
 tsp_next:
     addql   #1,%d2
     braw    tsp_loop
+tsp_saved:
+    movea.l %a2@,%a0
+    movea.l %a0@(40),%a0
+    movel   %a2,%sp@-
+    jsr     %a0@
+    addql   #4,%sp
+    tstl    %d0
+    beqw    tsp_invalid
+    movea.l %d0,%a0
+    lea.l   transpose_after,%a1
+    move.l  #721,%d0
+tsp_copy_after:
+    moveb   %a0@+,%a1@+
+    subql   #1,%d0
+    bplw    tsp_copy_after
+    braw    tsp_out
+tsp_invalid:
+    clrl    transpose_valid
 tsp_out:
     moveml  %sp@,%d2-%d5/%a2
     lea.l   %sp@(20),%sp
@@ -7891,6 +7928,9 @@ tsf_copy:
     movel   %a0@+,%a1@+
     subql   #1,%d0
     bplw    tsf_copy
+    lea.l   transpose_vt,%a0
+    movel   #transpose_popup_key,%d0
+    movel   %d0,%a0@(0x10)
     pea     transpose_text
     jsr     show_popup
     addql   #4,%sp
@@ -9464,6 +9504,8 @@ sp_out:
 
     .balign 4
 popup_mult:    .long 0   | show_popup: 0 = the stock stay, else N times it
+transpose_valid: .long 0 | a snapshot is available for popup BACK
+transpose_track: .long 0 | identity only, never dereferenced
 transpose_delta: .long 0 | requested semitones in the current RETRIG hold
 transpose_vt:    .space 88 | private stock popup vtable, including RTTI prefix
 transpose_text:  .space 16 | signed 32-bit delta and terminator
@@ -20851,6 +20893,137 @@ msg_e_fmt:  .asciz "Not 48kHz\nmono"
 msg_e_big:  .asciz "Sample too\nlarge"
     .align 2
 msg_buf:    .space 64
+
+| Snapshot the raw track block before the first edit of a gesture. Retain
+| it only while the selected track and all 722 bytes still match our last
+| result. Copy raw notes, including -1, so clipping and inherited defaults
+| undo exactly; subtracting the displayed delta would lose that information.
+| a0 = live block, a2 = selected track object, d4 = this turn's delta.
+transpose_snapshot:
+    tstl    transpose_valid
+    beqw    tss_new
+    cmpal   transpose_track,%a2
+    bnew    tss_new
+    movel   %a0,%sp@-
+    bsr     transpose_matches
+    movea.l %sp@+,%a0
+    tstl    %d0
+    bnew    tss_out
+tss_new:
+    movel   %a2,transpose_track
+    movel   %d4,transpose_delta
+    lea.l   transpose_before,%a1
+    move.l  #721,%d0
+tss_copy:
+    moveb   %a0@+,%a1@+
+    subql   #1,%d0
+    bplw    tss_copy
+    moveq   #1,%d0
+    movel   %d0,transpose_valid
+tss_out:
+    rts
+
+| a0 = live block -> d0 = 1 iff no intervening track edit. Scratch a0/a1/d1.
+transpose_matches:
+    lea.l   transpose_after,%a1
+    move.l  #721,%d0
+tsm_loop:
+    moveb   %a0@+,%d1
+    cmpb    %a1@+,%d1
+    bnew    tsm_no
+    subql   #1,%d0
+    bplw    tsm_loop
+    moveq   #1,%d0
+    rts
+tsm_no:
+    moveq   #0,%d0
+    rts
+
+| Called only by the transpose popup's BACK click, before stock closes it.
+| Validate the whole block before writing any notes. Never dereference the
+| saved track pointer: reacquire the current selection and compare identities.
+transpose_undo:
+    lea.l   %sp@(-12),%sp
+    moveml  %d2/%a2-%a3,%sp@
+    tstl    transpose_valid
+    beqw    tsu_out
+    clrl    transpose_valid        | single use, also on a failed validation
+    jsr     0x400cf866
+    movel   %d0,%sp@-
+    jsr     0x4000f23e
+    addql   #4,%sp
+    tstl    %d0
+    beqw    tsu_out
+    cmpl    transpose_track,%d0
+    bnew    tsu_out
+    movea.l %d0,%a2
+    movea.l %a2@,%a0
+    movea.l %a0@(40),%a0
+    movel   %a2,%sp@-
+    jsr     %a0@
+    addql   #4,%sp
+    tstl    %d0
+    beqw    tsu_out
+    movea.l %d0,%a0
+    bsr     transpose_matches
+    tstl    %d0
+    beqw    tsu_out
+    lea.l   transpose_before+580,%a3
+    moveq   #0,%d2
+tsu_loop:
+    lea.l   transpose_after+580,%a0
+    moveb   %a3@(0,%d2:l),%d0
+    cmpb    %a0@(0,%d2:l),%d0
+    beqw    tsu_next
+    extbl   %d0                   | -1 restores an inherited track default
+    movel   %d0,%sp@-
+    movel   %d2,%sp@-
+    movel   %a2,%sp@-
+    jsr     0x40016642
+    lea.l   %sp@(12),%sp
+tsu_next:
+    addql   #1,%d2
+    cmpil   #64,%d2
+    bcsw    tsu_loop
+    clrl    transpose_delta
+tsu_out:
+    moveml  %sp@,%d2/%a2-%a3
+    lea.l   %sp@(12),%sp
+    rts
+
+| (popup, event): use stock BACK click/modifier checks, then let the original
+| key handler close the popup. Other keys and all normal popups stay stock.
+transpose_popup_key:
+    lea.l   %sp@(-8),%sp
+    moveml  %d2/%a2,%sp@
+    movea.l %sp@(12),%a2
+    movel   %sp@(16),%d2
+    movel   %d2,%sp@-
+    jsr     0x4007240c
+    addql   #4,%sp
+    cmpil   #MM_KEY_RETURN,%d0
+    bnew    tsk_stock
+    tstl    %a2@(0x60)
+    blew    tsk_stock
+    movel   %d2,%sp@-
+    jsr     0x40072434            | click, on release
+    addql   #4,%sp
+    tstb    %d0
+    beqw    tsk_stock
+    movel   %d2,%sp@-
+    jsr     0x40072490            | stock excludes modified BACK
+    addql   #4,%sp
+    tstb    %d0
+    bnew    tsk_stock
+    bsr     transpose_undo
+tsk_stock:
+    moveml  %sp@,%d2/%a2
+    lea.l   %sp@(8),%sp
+    jmp     0x40074a2c
+
+    .balign 4
+transpose_before: .space 722 | exact pre-gesture track data
+transpose_after:  .space 722 | reject undo after any intervening track edit
 
 | ---- the DSP scratch buffer, deliberately LAST in the blob ----
 | 0x400a9f58 writes 8 longs of history at +0..31 (which is why our fill starts
