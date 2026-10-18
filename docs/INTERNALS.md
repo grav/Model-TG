@@ -55,21 +55,14 @@ These were each verified on hardware; they save a lot of rediscovery.
   separate store: set `0x4001646a(track, step, slot, value)`, clear
   `0x400164b0`, get `0x4001591e`; slots come from the parameter table at
   `0x4010dce0` (56-byte entries, slot at +4).
-- **Transpose:** `gm_enc_gate` consumes physical Pitch (encoder 2) while
-  `transpose_held` tracks RETRIG, except with SETTINGS or a custom page open.
-  `transpose_steps` walks the selected track's active length, resolves inherited
-  Trig Notes from +712, clamps to 0..127 and writes through `0x40016642`.
-  `transpose_delta` resets on a RETRIG up-to-down transition and accumulates
-  encoder deltas. `transpose_feedback` finds its live stock popup by a private
-  primary-vtable copy, updates text through `0x40074562`, and refreshes its
-  timeout. No popup object pointer is retained after an event.
-  Its private key slot wraps `0x40074a2c`: an unmodified BACK click while
-  the popup timer is live restores the pre-gesture raw notes through the stock
-  setter, then closes normally. Two 722-byte snapshots preserve inherited
-  notes and clipping; undo first verifies the current track identity and the
-  entire post-edit block. Other keys/encoder edits invalidate the snapshot.
-  No saved track pointer is dereferenced. This adds no audio-thread work.
-  Popup and BACK revert hardware validation is still needed.
+- **Transpose:** `transpose_enc` consumes physical Pitch (encoder 2) in the
+  parameter view while `transpose_held` tracks RETRIG, except with SETTINGS
+  or a custom page open. `transpose_steps` walks the selected track's active
+  length, resolves inherited Trig Notes from +712, clamps to 0..127 and writes
+  through `0x40016642`. Original notes live in the stock parameter-revert tree;
+  the signed delta is drawn inside that view. See the stock BACK section below
+  for capture, restore and expiry. This adds no audio-thread work. Hardware
+  validation of the stock-context integration is still needed.
 - **Step flag bit 12** (0x1000) is unused by the OS: nothing tests or sets it,
   and it is saved, loaded and copied with the step. Slide trigs keep their
   mark there. Whether a trig sounds a note: bit 7 when bit 11 is set, else the
@@ -110,8 +103,8 @@ Function names below describe inferred roles, not recovered source symbols.
 The ordinary parameter display owns one active revert context, rather than
 an edit-history stack. Its primary vtable is `0x4010052c`; key slot +8 points
 to `0x4001f97e`, encoder slot +0x44 to `0x4001f4f0`, and tick slot +0x2c to
-`0x4001efaa`. This is the parameter view itself, not the generic text popup
-used by transpose.
+`0x4001efaa`. Transpose now uses this parameter view itself, including the original key
+and tick handlers.
 
 | Parameter-view offset | Observed use |
 |---|---|
@@ -169,15 +162,22 @@ note. Setter `0x4000abdc` converts Q8 back to the note byte and calls
 stock restore machinery can represent multiple original notes, clipping,
 and inherited defaults without copying a whole track block.
 
-Reusing it is feasible in principle, but not implemented by this investigation.
-It needs the live parameter-view instance, correct parameter/track/edit-state
-ownership, original step-tree entries and track values, and a route from the
-transpose display to that view's BACK handling. It must also account for the
-stock RETRIG key's context-ending path and avoid presenting the sound Pitch
-parameter as the edited parameter. Simply calling `0x40016642` does not
-register an undo operation. The current transpose implementation still uses
-its own snapshots and popup key handler; its RETRIG-hold grouping and strict
-post-edit block check differ from stock's parameter/track context.
+**Transpose integration.** `transpose_enc` replaces the primary encoder slot
+and the secondary EncoderHandler thunk (+4 adjustment). It activates Trig Note
+through `0x4006b71c`, raises the parameter view like the stock encoder, captures
+the six track baselines, and inserts each changed step's original Q8 note or
+-1 into the view's tree using `0x400d8956`. That routine inserts unique keys:
+repeated turns preserve the first saved value. The context refreshes to 60 ticks.
+The original key handler performs BACK restore and sets the 15-tick timeout;
+the original tick/selection handlers clear and free the context.
+
+`wf_popup` routes this context's value drawing to a signed delta. It leaves
+stock labels and revert indications in place and displays zero after stock
+clears the changed flag. The saved view address is only an identity comparison
+against a live encoder/render argument, never a pointer to dereference later.
+There is no private popup, BACK hook, raw-track snapshot, or independent expiry.
+RETRIG tracking only records the held state; stock key handling decides whether
+a key event ends the context. Hardware validation of this integration is pending.
 
 ## What each part does, and how
 
