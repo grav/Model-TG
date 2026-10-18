@@ -392,6 +392,11 @@ for _addr, _original_handler, _hook in ((0x40100570, 0x4001f4f0, 'transpose_enc'
     struct.pack_into('>I', d, _addr-BASE, sym[_hook])
 for _addr, _original_handler in ((0x40100534, 0x4001f97e), (0x40100558, 0x4001efaa)):
     assert struct.unpack_from('>I', d, _addr-BASE)[0] == _original_handler, 'Stock revert handler moved'
+# Decode track+step keys only for a live transpose context. Stock BACK and
+# tree cleanup stay in control; ordinary parameter restore replays its entry.
+assert bytes(d[0x4001e366-BASE:0x4001e36e-BASE]) == bytes.fromhex('4fefffec48d73c04')
+jmp(0x4001e366, sym['transpose_restore'])
+d[0x4001e36c-BASE:0x4001e36e-BASE] = bytes.fromhex('4e71')
 # Pin the stock context layout and the helper entry points used by transpose.
 for _addr, _bytes in (
     (0x4001f976, '59af00046000fb74'),   # secondary `this` adjustment

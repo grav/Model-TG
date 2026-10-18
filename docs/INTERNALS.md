@@ -59,7 +59,7 @@ These were each verified on hardware; they save a lot of rediscovery.
   parameter view while `transpose_held` tracks RETRIG, except with SETTINGS
   or a custom page open. `transpose_steps` walks the selected track's active
   length, resolves inherited Trig Notes from +712, clamps to 0..127 and writes
-  through `0x40016642`. Original notes live in the stock parameter-revert tree;
+  through `0x40016642`. Original notes live in the stock parameter-revert tree, keyed by track and step;
   the signed delta is drawn inside that view. See the stock BACK section below
   for capture, restore and expiry. This adds no audio-thread work. Hardware
   validation of the stock-context integration is still needed.
@@ -163,21 +163,44 @@ stock restore machinery can represent multiple original notes, clipping,
 and inherited defaults without copying a whole track block.
 
 **Transpose integration.** `transpose_enc` replaces the primary encoder slot
-and the secondary EncoderHandler thunk (+4 adjustment). It activates Trig Note
-through `0x4006b71c`, raises the parameter view like the stock encoder, captures
-the six track baselines, and inserts each changed step's original Q8 note or
--1 into the view's tree using `0x400d8956`. That routine inserts unique keys:
-repeated turns preserve the first saved value. The context refreshes to 60 ticks.
-The original key handler performs BACK restore and sets the 15-tick timeout;
-the original tick/selection handlers clear and free the context.
+and secondary EncoderHandler thunk (+4 adjustment). It activates Trig Note
+through `0x4006b71c`, raises the parameter view, and captures the six track
+baselines. TRACK uses the same `0x4007faf4(2)` held-key query as stock control-all.
+Without TRACK it visits the selected track; with TRACK it visits indices 0..5
+through `0x4000cfcc(pattern, track)`, without changing the selected track. Each
+track uses its own length and inherited note default.
 
-`wf_popup` routes this context's value drawing to a signed delta. It leaves
-stock labels and revert indications in place and displays zero after stock
-clears the changed flag. The saved view address is only an identity comparison
-against a live encoder/render argument, never a pointer to dereference later.
-There is no private popup, BACK hook, raw-track snapshot, or independent expiry.
-RETRIG tracking only records the held state; stock key handling decides whether
-a key event ends the context. Hardware validation of this integration is pending.
+Each changed note goes into the stock unique-key tree using `0x400d8956`, with
+key `track * 64 + step` and value original Q8 note or -1. Repeated edits retain
+the first value, even when switching between single-track and all-track scope.
+`transpose_restore` hooks `0x4001e366` to decode these keys only for a live
+transpose context. Other contexts replay the original entry instructions and
+continue through stock restore. The original BACK handler still performs track
+baseline restore, redraw and the 15-tick timeout; the original tick/selection
+handlers free the tree. Each turn refreshes the normal 60-tick timeout. An
+ordinary encoder edit first closes our context so encoded keys cannot enter
+stock step editing. At most 384 tree nodes are needed (24 bytes each, excluding
+allocator overhead); all work runs on the UI thread.
+
+`wf_popup` draws a signed delta, prefixed ALL for all-track turns. Switching
+scope resets the displayed delta but retains the original revert baseline.
+Stock labels/revert indications remain, and clearing the changed flag displays
+zero. The saved view address is only compared against a live argument, never
+dereferenced later. There is no private popup or independent expiry.
+
+**Stock control-all trace.** `0x4001f886` checks TRACK, then `0x4005a5cc` filters
+parameter categories. Trig Note (category 18) is excluded from this ordinary
+path. The accepted path sets +0x23c and invokes `0x4001d6e4`, which resolves the
+knob's parameter for each of six tracks and calls its relative-value setter.
+BACK uses +0x23c to restore six track-level values via `0x4001de00`; stock step
+restore only targets the selected track. This is why transpose needs the
+track-aware step restore extension rather than only setting +0x23c.
+
+`tools/test_transpose.py` executes assembled ColdFire code with mocked stock
+APIs to check single/all/mixed edits, differing lengths, empty steps, clipping,
+inherited notes, repeated exact restore, encoder handoff and register/stack
+preservation. Hardware validation of key delivery, rendering, stock lifetime
+and UI responsiveness is still needed.
 
 ## What each part does, and how
 
