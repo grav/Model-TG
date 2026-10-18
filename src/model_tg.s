@@ -17013,12 +17013,14 @@ rs_menu_open:
     moveq   #0,%d0
     movew   %sr,%d0
     andil   #0x0700,%d0
-    bnew    gm_done
+    bnew    rs_m_done
     tstl    0x40fe4178
-    beqw    gm_done
-    bsr     gm_live               | a list menu already up: no second copy
+    beqw    rs_m_done
+    jsr     gm_live               | a list menu already up: no second copy
     tstl    %d0
-    bnew    gm_opened
+    beqw    rs_m_select
+    jmp     gm_opened
+rs_m_select:
     jsr     0x400cf866            | the selected track
     movel   %d0,%sp@-
     jsr     0x4000eb90
@@ -17026,13 +17028,15 @@ rs_menu_open:
     jsr     0x40012412
     lea.l   %sp@(8),%sp
     cmpil   #MAX_TRK,%d0
-    bccw    gm_done
+    bccw    rs_m_done
     lea.l   gm_track,%a0
     movel   %d0,%a0@
     lea.l   rs_desc,%a0
     lea.l   gm_cur,%a1
     movel   %a0,%a1@
-    jmp     lm_build              | popup feedback puts this beyond bra.w range
+    jmp     lm_build              | distant shared menu builder
+rs_m_done:
+    jmp     gm_done
 
 | values: a0 = &setting, a1 = its names
 rs_val_src:
