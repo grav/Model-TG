@@ -13535,6 +13535,21 @@ mfb_out:
     moveml  %sp@,%d2-%d7/%a2-%a3
     lea.l   %sp@(32),%sp
     rts
+| mono_pan replaces the pan bias instruction at 0x40056832. d1 is the
+| signed 16-bit effective pan, already including locks/modulation. The stock
+| path subtracts 256 and clamps to 0..32256: raw 16384 is the midpoint.
+| Override only this register, before L/R targets and their 32-sample ramps
+| are calculated. Saved parameters and the stock mute/level/send paths stay
+| intact. Six calls per block, no new per-sample work or scratch registers.
+| Replay the add last: the resumed bpl at 0x40056838 needs its flags.
+mono_pan:
+    tstl    out_mono
+    beqs    mono_pan_stock
+    movel   #16384,%d1
+mono_pan_stock:
+    addil   #-256,%d1
+    jmp     0x40056838
+
 | mfx_master - in place of `pea 4; pea 0x8000b990; jsr 0x400565c6` at
 | 0x40056b38 (a `subql #8,%sp` keeps the `addql #8` after it balanced). The
 | mixed stereo bus - 32 frames, L and R interleaved at 0x8000b990 - before
