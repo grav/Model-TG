@@ -13662,6 +13662,27 @@ mfm_bl:
     subql   #1,%d7
     bpls    mfm_bl
 mfm_x4:
+    | Fold after the FX returns and master noise, before the saturating x4.
+    | One flag test per block in stereo; mono has no multiplies or extra
+    | buffers. (L & R) + ((L ^ R) >> 1) averages without signed overflow,
+    | preserving identical channels exactly, even at full scale.
+    tstl    out_mono
+    beqs    mfm_scale
+    lea.l   0x8000b990,%a0
+    moveq   #31,%d7
+mfm_mono:
+    movel   %a0@,%d0
+    movel   %a0@(4),%d1
+    movel   %d0,%d2
+    andl    %d1,%d2
+    eorl    %d1,%d0
+    asrl    #1,%d0
+    addl    %d2,%d0
+    movel   %d0,%a0@+
+    movel   %d0,%a0@+
+    subql   #1,%d7
+    bpls    mfm_mono
+mfm_scale:
     pea     4
     pea     0x8000b990
     jsr     0x400565c6
@@ -15234,7 +15255,8 @@ sys_vbuf:      .space 24
 | "Device Config" (DeviceSettingsMenuView, constructor 0x40032726: USB mode,
 | LCD, LED, Contrast) ends with `moveml %sp@(24),%d2-%d6/%a2-%fp` at
 | 0x40032aee, with the menu in a2 - the shape Scale Lock's rows are added in.
-| cfg_hook adds one row and resumes. (samplerFK hooked 0x40031be4 instead,
+| cfg_hook adds Transfer, System and Output, then resumes.
+| (samplerFK hooked 0x40031be4 instead,
 | which is "Battery Config": its label functions sit next to these ones.)
 cfg_hook:
     lea.l   %sp@(-16),%sp
@@ -15244,6 +15266,10 @@ cfg_hook:
     jsr     lm_add_row
     addql   #8,%sp
     pea     sys_row               | and after it, System: the load page
+    movel   %a2,%sp@-
+    jsr     lm_add_row
+    addql   #8,%sp
+    pea     out_row
     movel   %a2,%sp@-
     jsr     lm_add_row
     addql   #8,%sp
@@ -15564,6 +15590,7 @@ id_rot:
     moveq   #0,%d1
 ir_set:
     lea.l   id_mode,%a1
+cfg_set_redraw:
     movel   %d1,%a1@
     movea.l %sp@(4),%a0           | the closure -> its data -> the menu
     movea.l %a0@,%a0
@@ -15575,6 +15602,34 @@ ir_set:
     addql   #4,%sp
 ir_out:
     rts
+
+| Output is a runtime device setting: stereo on boot, mono on both jacks.
+| Reuse the stock edit action and redraw, without changing any saved pan.
+out_lab:
+    lea.l   out_s_lab,%a1
+    braw    gm_lab
+out_val:
+    lea.l   out_mono,%a0
+    lea.l   out_names,%a1
+    braw    gm_val
+out_rot:
+    movel   %sp@(12),%d0
+    beqs    ir_out
+    moveq   #1,%d1
+    tstl    %d0
+    bgts    out_set
+    moveq   #0,%d1
+out_set:
+    lea.l   out_mono,%a1
+    bras    cfg_set_redraw
+
+    .align 4
+out_mono:     .long 0
+out_row:      .long out_lab, out_val, out_rot, id_press
+out_names:    .long out_s_ste, out_s_mon
+out_s_lab:    .asciz "Output"
+out_s_ste:    .asciz "STE"
+out_s_mon:    .asciz "MON"
 
     .align 4
 id_mode:      .long 0          | 0 = CYC, 1 = SMP; every boot starts at CYC
