@@ -175,7 +175,7 @@ _dis=subprocess.run([CROSS+"objdump","-d",elf],capture_output=True,text=True,che
 # Tables of .long data inside the code (objdump decodes them as instructions)
 # are skipped by the label that holds them.
 _DATA_LABELS={'st_fields','st_fields_end','st_reset','key_value_strings',
-              'rs_items','rs_desc'}   # pointer tables (menu descriptors), not code
+              'rs_items','rs_desc','rtg_names'}   # pointer tables, not code
 _wrapped=[]; _in=None
 for _l in _dis.splitlines():
     _h=_re.match(r'^[0-9a-f]{8} <([^>]+)>:',_l)
