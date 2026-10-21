@@ -15270,7 +15270,7 @@ sys_vbuf:      .space 24
 | "Device Config" (DeviceSettingsMenuView, constructor 0x40032726: USB mode,
 | LCD, LED, Contrast) ends with `moveml %sp@(24),%d2-%d6/%a2-%fp` at
 | 0x40032aee, with the menu in a2 - the shape Scale Lock's rows are added in.
-| cfg_hook adds Transfer, System and Output, then resumes.
+| cfg_hook adds Transfer, System, Output and Gate Clock, then resumes.
 | (samplerFK hooked 0x40031be4 instead,
 | which is "Battery Config": its label functions sit next to these ones.)
 cfg_hook:
@@ -15285,6 +15285,10 @@ cfg_hook:
     jsr     lm_add_row
     addql   #8,%sp
     pea     out_row
+    movel   %a2,%sp@-
+    jsr     lm_add_row
+    addql   #8,%sp
+    pea     gate_row
     movel   %a2,%sp@-
     jsr     lm_add_row
     addql   #8,%sp
@@ -15909,6 +15913,7 @@ rs_out:
     movel   %sp@(8),%sp@-
     jsr     0x400567ba
     addql   #8,%sp
+    jsr     gate_service          | clock pulse expiry and UART ownership
     addql   #1,blk_clk            | wall time, in blocks (1500 a second)
     bsr     prof_end              | the block is rendered: how long did it take
     lea.l   rs_state,%a0
@@ -21154,6 +21159,9 @@ msg_e_fmt:  .asciz "Not 48kHz\nmono"
 msg_e_big:  .asciz "Sample too\nlarge"
     .align 2
 msg_buf:    .space 64
+
+    .balign 2
+    .include "midi_gate.inc"
 
 | ---- the DSP scratch buffer, deliberately LAST in the blob ----
 | 0x400a9f58 writes 8 longs of history at +0..31 (which is why our fill starts
