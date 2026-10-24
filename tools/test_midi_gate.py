@@ -114,7 +114,8 @@ class GateTest(unittest.TestCase):
         self.service()
         self.assertEqual(self.writes, [(0xfc044019, 1, 37),
                                       (0xfc04401c, 1, 37),
-                                      (0xfc04c01c, 1, 53), (UCR, 1, 4)])
+                                      (0xfc04c01c, 1, 53), (UCR, 1, 4),
+                                      (UCR, 1, 0x60)])
 
     def test_clock_divisions_and_pulse_expiry(self):
         for mode, divisor in enumerate((24, 12, 6, 1), 1):
@@ -123,13 +124,13 @@ class GateTest(unittest.TestCase):
             for tick in range(49):
                 before = len(self.writes)
                 self.byte(0xf8)
-                self.assertEqual((UCR, 1, 0x60) in self.writes[before:], tick % divisor == 0)
+                self.assertEqual((UCR, 1, 0x70) in self.writes[before:], tick % divisor == 0)
                 if tick % divisor == 0:
                     for _ in range(7):
                         self.service()
-                        self.assertEqual(self.get('gate_level'), 1)
+                        self.assertEqual(self.get('gate_level'), 0)
                     self.service()
-                    self.assertEqual(self.get('gate_level'), 0)
+                    self.assertEqual(self.get('gate_level'), 1)
 
     def test_stopped_transport_and_realtime_filter(self):
         self.activate(3)
@@ -137,19 +138,19 @@ class GateTest(unittest.TestCase):
             self.byte(byte)
         self.assertEqual(self.get('gate_count'), 0)
         self.byte(0xf8)
-        self.assertEqual(self.get('gate_level'), 1)
-        self.byte(0xfc)
         self.assertEqual(self.get('gate_level'), 0)
+        self.byte(0xfc)
+        self.assertEqual(self.get('gate_level'), 1)
         self.byte(0xf8)
         self.put(PLAYING, 0)
         self.service()
-        self.assertEqual(self.get('gate_level'), 0)
+        self.assertEqual(self.get('gate_level'), 1)
         self.byte(0xf8)
-        self.assertEqual(self.get('gate_level'), 0)
+        self.assertEqual(self.get('gate_level'), 1)
         self.put(PLAYING, 1)
         self.byte(0xfa)
         self.byte(0xf8)
-        self.assertEqual(self.get('gate_level'), 1)
+        self.assertEqual(self.get('gate_level'), 0)
 
     def test_pending_and_active_modes_drop_midi(self):
         for requested, active in ((3, 0), (3, 3), (0, 3), (5, 3)):

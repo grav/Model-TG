@@ -44,8 +44,10 @@ when necessary. Buffered messages and non-clock real-time bytes are discarded
 during gate mode, not queued for playback later. USB routing occurs above
 these physical-port hooks and is unchanged.
 
-The audio output wrapper expires pulses after eight 32-sample blocks
-(roughly 4.7–5.3 ms, plus UART command latency). It also releases the line
+Clock mode holds BREAK between pulses and releases it at the clock tick.
+This puts the TXD rising edge at pulse start instead of about 5 ms later.
+The audio output wrapper restores BREAK after eight 32-sample blocks
+(roughly 4.7–5.3 ms, plus UART command latency). It also restores BREAK
 when the stock playing flag clears, even without a transmitted Stop byte.
 The default disabled path is one call, two flag reads, an OR/branch and return
 per block, plus the producer checks. Actual CPU and timing must be measured.
