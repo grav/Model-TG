@@ -79,7 +79,7 @@ gate_clock:
     cmpil   #0xfc,%d1
     beqs    gc_reset
     cmpil   #0xfa,%d1
-    beqs    gc_reset
+    beqs    gc_start
     cmpil   #0xf8,%d1
     bnes    gc_ret
     tstl    0x40a7883c            | stock transport playing flag
@@ -89,6 +89,13 @@ gate_clock:
     subql   #1,gate_count
 gc_ret:
     rts
+gc_start:
+    | Stock's local Start path sets playing before sending FA (0x4005508e,
+    | 0x400550a0). Waiting for a later F8 adds a tempo-dependent startup tick.
+    | Count Start as pulse zero; gc_pulse reloads divisor-1 so the next edge
+    | is on the divisor-th F8, not on the first F8 after Start.
+    tstl    0x40a7883c
+    beqs    gc_reset
 gc_pulse:
     lea.l   gate_divs,%a0
     subql   #1,%d0

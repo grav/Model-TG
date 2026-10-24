@@ -46,6 +46,13 @@ these physical-port hooks and is unchanged.
 
 Clock mode holds BREAK between pulses and releases it at the clock tick.
 This puts the TXD rising edge at pulse start instead of about 5 ms later.
+Start (FA) emits pulse zero immediately while playback is active and reloads
+the divider. The next edge is on the divisor-th F8. Previously Start only
+reset the counter, waiting for the next F8 and potentially adding one tick
+(83.3 ms at 30 BPM, 20.8 ms at 120 BPM). The local stock Start path sets
+playing at `0x4005508E` before sending FA at `0x400550A0`. Actual alignment
+with audio still needs a hardware timing comparison; this is a test fix for
+the reported tempo-dependent delay.
 The audio output wrapper restores BREAK after eight 32-sample blocks
 (roughly 4.7–5.3 ms, plus UART command latency). It also restores BREAK
 when the stock playing flag clears, even without a transmitted Stop byte.

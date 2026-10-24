@@ -121,7 +121,11 @@ class GateTest(unittest.TestCase):
         for mode, divisor in enumerate((24, 12, 6, 1), 1):
             self.activate(mode)
             self.byte(0xfa)
-            for tick in range(49):
+            self.assertEqual(self.get('gate_level'), 0)
+            for _ in range(8):
+                self.service()
+            self.assertEqual(self.get('gate_level'), 1)
+            for tick in range(1, 50):
                 before = len(self.writes)
                 self.byte(0xf8)
                 self.assertEqual((UCR, 1, 0x70) in self.writes[before:], tick % divisor == 0)
@@ -149,8 +153,27 @@ class GateTest(unittest.TestCase):
         self.assertEqual(self.get('gate_level'), 1)
         self.put(PLAYING, 1)
         self.byte(0xfa)
-        self.byte(0xf8)
         self.assertEqual(self.get('gate_level'), 0)
+        for _ in range(8):
+            self.service()
+        self.byte(0xf8)
+        self.assertEqual(self.get('gate_level'), 1)  # no extra first-clock pulse
+
+    def test_start_alignment_at_slow_and_fast_tempos(self):
+        # Tick period is 60/(BPM*24), with 1500 audio blocks per second.
+        # Simulate sixteenth-note clock at 30/120 BPM. First edge is on FA;
+        # subsequent edges stay six F8 apart without a tempo-sized start gap.
+        for blocks_per_tick in (125, 31):
+            self.activate(0)
+            self.activate(3)
+            self.byte(0xfa)
+            self.assertEqual(self.get('gate_level'), 0)
+            for tick in range(1, 19):
+                for _ in range(blocks_per_tick):
+                    self.service()
+                before = len(self.writes)
+                self.byte(0xf8)
+                self.assertEqual((UCR, 1, 0x70) in self.writes[before:], tick % 6 == 0)
 
     def test_pending_and_active_modes_drop_midi(self):
         for requested, active in ((3, 0), (3, 3), (0, 3), (5, 3)):
