@@ -2,6 +2,8 @@
 | Experimental clock on MIDI OUT, via UART9 BREAK. UCR commands follow
 | MCF54418RM 41.3.5 table 41-8. BREAK drives TXD low; STOP BREAK drives it
 | high. Neither establishes the external TRS voltage or load capability.
+| Clock polarity: hold BREAK between pulses, release it for ~5 ms at the
+| clock tick. TXD's rising edge is therefore at the start, not the expiry.
 | mode: 0 MIDI, 1 quarter, 2 eighth, 3 sixteenth, 4 24 PPQN, 5 idle, 6 break.
 | Only physical TX is intercepted. RX DMA36 and USB paths remain stock.
 GATE_UCR = 0xec074008
@@ -95,12 +97,12 @@ gc_pulse:
     movel   %d0,gate_count
     moveq   #GATE_PULSE,%d0
     movel   %d0,gate_timer
-    moveq   #1,%d0
+    moveq   #0,%d0               | rising TXD edge at the clock tick
     braw    gate_line
 gc_reset:
     clrl    gate_count
     clrl    gate_timer
-    moveq   #0,%d0
+    moveq   #1,%d0               | clock baseline is BREAK, including Stop
     braw    gate_line
 
 | Once per audio block. A nonzero request blocks NEW physical MIDI sends;
@@ -151,8 +153,8 @@ gs_claim:
     clrl    gate_timer
     clrl    gate_count
     clrl    gate_level
-    cmpil   #6,%d0
-    bnes    gs_done              | start clock and IDLE at idle TXD
+    cmpil   #5,%d0
+    beqs    gs_done              | only the IDLE test holds TXD high
     moveq   #1,%d0
     bsr     gate_line
     bras    gs_done
@@ -165,7 +167,7 @@ gs_run:
     beqs    gs_done
     subql   #1,gate_timer
     bnes    gs_done
-    moveq   #0,%d0
+    moveq   #1,%d0               | pulse over: return to BREAK
     bsr     gate_line
     bras    gs_done
 gs_stop:

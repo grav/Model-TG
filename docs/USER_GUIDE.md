@@ -314,8 +314,9 @@ For clock pulses:
 | **1/16** | 4 (one per six MIDI clocks) |
 | **24PPQN** | 24 (one per MIDI clock) |
 
-Each pulse asserts UART BREAK for about 5 ms. Timing follows the outgoing
-MIDI clock; Stop releases the pulse, and Start resets the divider. Enabling
+Clock mode holds UART BREAK between pulses and releases it for about 5 ms
+at each tick, putting the TXD rising edge at the start of the pulse. Timing
+follows the outgoing MIDI clock; Stop returns to BREAK, and Start resets the divider. Enabling
 mid-play starts the divider at the next clock after the port becomes ready.
 **IDLE** and **BREAK** hold fixed UART states for measurement, even while
 stopped; select **OFF** to return to MIDI.
