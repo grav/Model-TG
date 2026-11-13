@@ -9665,11 +9665,12 @@ dbh_pass:
     MAX_FILE    = 0x1800000        | 24 MiB - a sanity bound, not a buffer size
 
 | ---- the dedicated 64 MiB sample region ----
-| 0x4a800000..0x4e800000 is the pool Model:Samples uses for its 64 MB of sample
-| memory. Cycles registers a 4 MiB region at 0x4a400000 and nothing above it;
-| Samples registers that same region 64 MiB higher, at 0x4e400000, with its pool
-| in between. Verified on hardware: 1,024 signatures every 64 KiB survived
-| repeated sample loads, playback and browsing untouched.
+| 0x4a800000..0x4e800000 is our Cycles-only sample region, NOT the exact
+| stock Samples pool. Samples 1.13 allocates sample files from 0x4a2dd490
+| through 0x4e2dd4e0 and uses 0x4e400000..0x4e800000 for its delay ring
+| (docs/notes/model_samples_fx_port.md). Cycles instead uses a 4 MiB delay
+| region at 0x4a400000. Our region was verified on Cycles hardware: 1,024
+| signatures every 64 KiB survived repeated loads, playback and browsing.
 |
 | Using it directly replaces the whole segmented loader - no operator new, no
 | segment table, no per-sample allocation, and the render indexes one flat
