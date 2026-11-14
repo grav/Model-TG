@@ -4,9 +4,11 @@
 
 This is groundwork for porting **only** the output retrig and master FX in
 [the user guide](../USER_GUIDE.md#retrig-and-master-fx), keeping the stock
-Model:Samples sampler and project format. There is no Samples payload or
-firmware builder yet. The existing `build.py` and `Model-TG.syx` target
-**Cycles only**. Do not install them on Samples or bypass their stock hash
+Model:Samples sampler and project format. An executable **emulator-only DSP
+prototype** now exists: see [SAMPLES_EMULATOR.md](../SAMPLES_EMULATOR.md) for
+build/test commands, results, and limitations. There is still no cold-boot
+Samples firmware builder or panel UI port. The existing `build.py` and
+`Model-TG.syx` target **Cycles only**. Do not install them on Samples or bypass their stock hash
 checks. No device communication is needed for this investigation.
 
 ## Images examined
@@ -106,10 +108,11 @@ retrig histories: [0x4dedd4e0, 0x4e2dd4e0)   0x00400000 bytes
 ```
 
 Reducing all five capacity immediates by 4 MiB would keep those reporting and
-allocation paths consistent. This is a proposed reservation, **not an applied
-patch or a proof that all writers have been found**. Audit compaction, preview,
+allocation paths consistent. This is a proposed hardware reservation, **not a
+hardware patch or a proof that all writers have been found**. Audit compaction, preview,
 project reload, failure/rollback paths, and allocator alignment bounds before
-using it. No capacity or base-address change was made to firmware.
+using it on hardware. The emulator prototype applies the reduced capacities
+in guest memory only; the vendor image and physical device remain unchanged.
 
 The end is significant: stock code clears/uses a scratch buffer starting at
 `0x4e2dd4e0` (`0x400a6526..0x400a6536`, 0x160 bytes), and the word staging
@@ -127,16 +130,19 @@ near `0x4e800000` overlaps this stock delay ring.
    16 histories of 131,072 signed 16-bit samples (4 MiB), including its custom
    stereo side streams. Samples needs its own stream-layout decision. Reserve
    payload/state memory and adapt startup clearing and cache handling too.
-2. **Audio hooks and timing.** Find a once-per-block, pre-mixer hook for the
-   six stock tracks; confirm 32-frame format, gain/send ordering, EMAC state,
-   tempo units, audio clock, play flag, and bar-start timestamp. The existing
-   `rtg_audio` directly reads Cycles globals and depends on `blk_clk`.
+2. **Audio hooks and timing.** The emulator prototype now hooks the stock
+   output call at `0x40058892` before sends/mixing and supplies `blk_clk`,
+   Samples' mono-channel addresses and relocated timing globals to the shared
+   DSP. Bypassed pattern PCM matches stock. Continue checking grid behavior
+   across tempo/transport/pattern changes, EMAC state and actual CPU headroom.
 3. **Separate the feature from the Cycles sampler.** The retrig engine and
    master effects are mostly in `src/model_tg.s:11954..14215`, but are not a
    standalone module. `sx_gain`/`sx_mix` integrate them into the audio path;
    they also use the machine-menu view, key/knob/pad handlers, LEDs, pattern
    state, and shared helpers. Do not pull in the added sampler machines,
-   transfer-identity spoofing, or Cycles-specific optimizations.
+   transfer-identity spoofing, or Cycles-specific optimizations. The emulator
+   builder currently extracts only the DSP/tables/state and a decimal helper;
+   it does not build the added sampler engines or views.
 4. **UI integration.** Resolve the ambiguous signatures from callers; port
    the Settings+Retrig chord, momentary/latch keys, track pads/LEDs, the two
    DATA rows, all twelve FX knobs, page lifecycle, and Settings+Return reset.
