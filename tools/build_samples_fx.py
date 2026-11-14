@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build an emulator-only Samples 1.13 retrig/master-FX DSP payload.
+"""Build an emulator-only Samples 1.13 retrig/master-FX payload and native UI.
 
-No vendor firmware is patched, packaged, or transmitted. DSP is extracted from
-its existing source rather than forked. Panel/UI integration and cold boot are
-not implemented: controls are an emulator mailbox. See docs/SAMPLES_EMULATOR.md.
+No vendor firmware is patched, packaged, or transmitted. Shared DSP and UI
+helpers are extracted from their existing source rather than forked. Cold boot
+is not implemented. See docs/SAMPLES_EMULATOR.md for the interactive launcher.
 """
 import argparse
 import hashlib
@@ -37,7 +37,7 @@ def section(text, start, end):
 
 
 def shared_source(text):
-    # UI construction, pad hooks, and renderer are intentionally not included.
+    # This part is DSP-only; native UI helpers are extracted separately below.
     dsp = "rtg_want:\n" + section(text, "\nrtg_want:\n", "\nrtg_render:\n")
     # End at the actual final state field; don't depend on surrounding sections.
     start = text.index("\nrtg_names:")
@@ -59,7 +59,7 @@ def shared_source(text):
     if dsp.count(entry) != 1:
         raise ValueError("shared knob entry changed")
     dsp = dsp.replace(entry, "mfx_knob:\n")
-    combined = dsp + state + decimal
+    combined = dsp + '\n' + state + '\n' + decimal
     # Only executable statements are rewritten; preserve original comments as
     # provenance, and reject unknown absolute runtime dependencies below.
     lines = []
@@ -79,6 +79,31 @@ def shared_source(text):
     return "\n".join(lines) + "\n"
 
 
+def ui_source(text):
+    """Reuse renderer, momentary/latch key state machine and pad selection."""
+    render = 'rtg_render:\n' + section(text, '\nrtg_render:\n', '\nrtg_s_mode:')
+    helpers = 'sys_left:\n' + section(text, '\nsys_left:\n', '\n| sys_bar')
+    zero = 'rtg_zero:\n' + section(text, '\nrtg_zero:\n', '\n| rtg_topnow')
+    pads = 'pad_hook:\n' + section(text, '\npad_hook:\n', '\n| rtg_zero')
+    pads = pads.replace('movel   %d1,rtg_sel', 'movel   %d1,rtg_sel\n    bsr     sp_redraw')
+    keys = 'kh_rtg:\n' + section(text, '\nkh_rtg:\n', '\n    | ---- Settings + a trig key:')
+    keys = keys.replace('krn_out:\n    rts', 'krn_out:\n    bra     sp_page_other')
+    # Redraw after step press/release, not merely after an FX knob turn.
+    keys = keys.replace('    moveq   #0,%d0\n    rts',
+                        '    bsr     sp_redraw\n    moveq   #0,%d0\n    rts')
+    relocations = {0x40070DEA: 0x4006FE4A, 0x40071A04: 0x40070A64,
+                   0x401001D0: 0x400FBB74, 0x4001D188: 0x4001E8E0}
+    result = []
+    for line in (render + helpers + zero + pads + keys).splitlines():
+        code, sep, comment = line.partition('|')
+        code = code.replace('0x40124b58', 'sp_fmt_s')
+        for old, new in relocations.items():
+            code = code.replace(f'0x{old:08x}', f'0x{new:08x}')
+        result.append(code + (sep + comment if sep else ''))
+    return ('SYS_FONT = 0x40c70c18\nKEY_SETTINGS = 13\nKEY_PATTERN = 3\n'
+            'KEY_RETRIG = 4\n' + '\n'.join(result) + '\n')
+
+
 def build(output, cross=None):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
@@ -87,6 +112,7 @@ def build(output, cross=None):
         "m68k-elf-")
     shared = (ROOT / "src/model_tg.s").read_text()
     glue = (ROOT / "src/samples_fx_glue.s").read_text()
+    ui = (ROOT / "src/samples_fx_ui.s").read_text()
     constants = f"""
 RTG_N = 131072
 RTG_MASK = RTG_N-1
@@ -98,7 +124,7 @@ RTG_QN = 21600000
 RTG_BASE = 0x{HISTORY_BASE:08x}
 """
     assembly = output / "samples_fx.s"
-    assembly.write_text(glue + constants + shared_source(shared))
+    assembly.write_text(glue + ui + constants + shared_source(shared) + ui_source(shared))
     obj, elf, binary = (output / f"samples_fx.{ext}" for ext in ("o", "elf", "bin"))
     subprocess.run([cross + "as", "-march=cfv4e", "-o", str(obj), str(assembly)], check=True)
     subprocess.run([cross + "ld", f"-Ttext=0x{PAYLOAD_BASE:x}", "-e", "samples_audio",
@@ -114,6 +140,7 @@ RTG_BASE = 0x{HISTORY_BASE:08x}
         raise ValueError("development payload exceeds scratch budget")
     report = {
         "format": "samples-fx-emulator-v1", "hardware_installable": False,
+        "native_panel_ui": True,
         "payload_base": PAYLOAD_BASE, "history_base": HISTORY_BASE,
         "history_bytes": 0x400000, "payload_bytes": len(payload),
         "payload_sha256": hashlib.sha256(payload).hexdigest(),
@@ -121,7 +148,7 @@ RTG_BASE = 0x{HISTORY_BASE:08x}
         "symbols": syms,
     }
     (output / "samples_fx.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(f"Emulator-only DSP: {len(payload):,} bytes at 0x{PAYLOAD_BASE:08x}")
+    print(f"Emulator-only DSP/UI: {len(payload):,} bytes at 0x{PAYLOAD_BASE:08x}")
     return report
 
 

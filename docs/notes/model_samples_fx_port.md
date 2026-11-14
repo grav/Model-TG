@@ -4,10 +4,10 @@
 
 This is groundwork for porting **only** the output retrig and master FX in
 [the user guide](../USER_GUIDE.md#retrig-and-master-fx), keeping the stock
-Model:Samples sampler and project format. An executable **emulator-only DSP
-prototype** now exists: see [SAMPLES_EMULATOR.md](../SAMPLES_EMULATOR.md) for
-build/test commands, results, and limitations. There is still no cold-boot
-Samples firmware builder or panel UI port. The existing `build.py` and
+Model:Samples sampler and project format. An executable **interactive emulator
+prototype with native panel UI** now exists: see
+[SAMPLES_EMULATOR.md](../SAMPLES_EMULATOR.md) for launch/test commands, results,
+and limitations. There is still no cold-boot Samples firmware builder. The existing `build.py` and
 `Model-TG.syx` target **Cycles only**. Do not install them on Samples or bypass their stock hash
 checks. No device communication is needed for this investigation.
 
@@ -143,10 +143,13 @@ near `0x4e800000` overlaps this stock delay ring.
    transfer-identity spoofing, or Cycles-specific optimizations. The emulator
    builder currently extracts only the DSP/tables/state and a decimal helper;
    it does not build the added sampler engines or views.
-4. **UI integration.** Resolve the ambiguous signatures from callers; port
-   the Settings+Retrig chord, momentary/latch keys, track pads/LEDs, the two
-   DATA rows, all twelve FX knobs, page lifecycle, and Settings+Return reset.
-   Preserve stock Samples behavior outside this page.
+4. **UI integration.** The native Samples base-View page now handles the
+   Settings+Retrig chord, momentary/latch keys, track pads, both DATA rows,
+   all twelve FX knobs, page lifecycle and Settings+Back reset. The emulator
+   launcher makes Settings mouse-latchable and labels DATA's push switch.
+   Selection LEDs and a dedicated hint-expiry redraw timer remain unported.
+   Continue checking stock behavior outside the page and on unusual view-stack
+   transitions.
 5. **Samples-only builder.** Require the Samples hash above, assert every
    replaced stock byte, retain the Samples update container/identity, validate
    branch/stack/memory bounds, and round-trip unpack/repack. Do not add a

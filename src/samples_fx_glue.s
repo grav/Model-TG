@@ -1,6 +1,7 @@
 | Model:Samples OS 1.13 DSP port, emulator-only development payload.
 | Not a hardware memory reservation or a bootable firmware image.
-| The builder extracts the shared DSP from model_tg.s, without its sampler/UI.
+| The builder extracts shared DSP from model_tg.s; samples_fx_ui.s adds a
+| Samples base-View page, without the Cycles sampler/machine-select UI.
     .text
     .balign 4
     .globl samples_audio, samples_mix

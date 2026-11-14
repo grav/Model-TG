@@ -44,7 +44,10 @@ def install(session, report, payload, stock):
     # No hooks are installed unless the snapshot actually contains stock code
     # at every site. Reject wrong versions, already-patched sessions and large
     # live sample sets before touching either the payload or history region.
-    for address, n in ((0x40058892, 6), (0x400555B4, 8), (0x40055ADC, 14)):
+    hooks = [(0x40058892, 6), (0x400555B4, 8), (0x40055ADC, 14)]
+    if report.get('native_panel_ui'):
+        hooks += [(0x4007146C, 10), (0x4001E8D8, 8)]
+    for address, n in hooks:
         if read(address, n) != stock[address - BASE:address - BASE + n]:
             raise ValueError(f"snapshot hook site differs from stock: {address:08x}")
     for address, _, _ in CAPACITY_SITES:
@@ -74,6 +77,9 @@ def install(session, report, payload, stock):
     # Same stack contract as Cycles: compensate for the original addq #8.
     put(m, 0x40055ADC, b'\x4e\xb9' + struct.pack('>I', syms['mfx_master'])
         + b'\x51\x8f' + b'\x4e\x71' * 3)
+    if report.get('native_panel_ui'):
+        put(m, 0x4007146C, b'\x4e\xf9' + struct.pack('>I', syms['samples_key']) + b'\x4e\x71' * 2)
+        put(m, 0x4001E8D8, b'\x4e\xf9' + struct.pack('>I', syms['pad_hook']) + b'\x4e\x71')
     return {'resident_sample_bytes': used, 'reduced_capacity': capacity,
             'sample_pool_base': SAMPLE_POOL_BASE}
 

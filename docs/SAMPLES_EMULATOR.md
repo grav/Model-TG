@@ -1,135 +1,200 @@
-# Model:Samples retrig/master FX: emulator DSP prototype
+# Model:Samples retrig/master FX in DigiEmu
 
-**Development-only. No installable Samples firmware is produced.**
+**Interactive emulator prototype. Not hardware-installable firmware.**
 
-The first executable port runs the existing Model-TG retrig and all twelve
-master-FX controls on the stock Model:Samples 1.13 audio path in DigiEmu. This
-is real ColdFire assembly executing in the emulator, not host-side audio
-processing. Stock Samples playback and its project/sample formats remain in
-use. The feature's **panel page, buttons, knob events and LEDs are not ported
-yet**: the test controls the DSP through a development mailbox and state writes.
+You can now use the emulator's panel to open the retrig page, play momentary or
+latched repeats, select tracks with the pads and adjust all twelve master FX.
+The handlers and screen renderer are **native ColdFire firmware code**, not
+Python input interception or host-side DSP. Stock Samples playback, factory
+samples and project/sample formats remain in use.
 
-## Prerequisites
+## Launch the interactive panel
 
-- ColdFire binutils, as in [BUILD.md](BUILD.md).
-- A DigiEmu checkout with its Python environment and patched Unicorn library.
-- A settled, factory-enabled Samples 1.13 firmware folder with stock sections,
-  card and `snapshots/model-samples_OS1.13/gui.snap`.
-- See `model-samples-analysis` commit `03fb8bb` and its `EMULATOR.md` for the
-  factory-bank reconstruction and emulator boot procedure. Firmware, snapshots,
-  card images, bank audio and captures are private local inputs/artifacts, not
-  committed to this repository.
+Prerequisites: ColdFire binutils ([BUILD.md](BUILD.md)), a DigiEmu checkout with
+its Python environment/patched Unicorn, and a factory-enabled Samples OS 1.13
+GUI snapshot. The factory-bank setup is documented in `model-samples-analysis`
+commit `03fb8bb`, `EMULATOR.md`.
 
-Close any panel using the input firmware folder before running: the harness
-locks it while making disposable copies. It never patches the source firmware,
-snapshots or card. DigiEmu's lock metadata file is updated by acquiring the lock.
-
-## Run
-
-From this repository, with sibling checkouts in `~/repo`:
+Close any panel using the source firmware folder, then run from this repository:
 
 ```sh
-python3 tools/build_samples_fx.py
-python3 -m unittest discover -s tools -p 'test_*samples_fx.py'
+LIBUNICORN_PATH=/Applications/digiemu.app/Contents/Frameworks/unicorn/lib \
+  ../digiemu/.venv/bin/python tools/run_samples_fx_emulator.py \
+  --digiemu ../digiemu \
+  --firmware-dir ../model-samples-analysis/.local-emulator/test-firmware
+```
 
+Use your actual factory-enabled firmware folder. For the installed app it may
+instead be:
+
+```text
+~/Library/Application Support/digiemu/firmware/ms-1.13-e11859b6
+```
+
+The launcher builds the payload, clones the source into a timestamped directory
+under `build/samples-panel-*/`, injects it **into guest RAM only**, and opens the
+DigiEmu window with live audio. `--work NEW_DIRECTORY` and `--scale 4` override
+the output location and panel zoom. Existing work directories are refused.
+
+The source firmware/card/snapshots are not patched or reset. A source-folder
+lock is held while copying; acquiring it updates the lock metadata file.
+Writable inputs are independent copies, never hard links. macOS uses CoW clones
+when available; the fallback can require substantial disk space.
+
+On this Mac the checkout Python lacks `_tkinter`. The launcher can borrow the
+installed app's bundled Tk extension **only when its Python ABI matches**, and
+sets its Tcl/Tk resource paths. Otherwise install Tk for your Python version.
+The library override above supplies the installed app's patched Unicorn; omit
+or adjust it if your environment already provides that library.
+
+### Using the panel
+
+1. Click **SETTINGS** in the **modifiers** group to latch it down.
+2. Click **RETRIG**, then click **SETTINGS** again to release the modifier.
+3. Click **PLAY** to hear the factory pattern.
+4. Hold a step **1–16** for a momentary repeat. The newest held step wins;
+   releasing it falls back to an older held step.
+5. Click pads **T1–T6** to toggle which tracks are affected. The six boxes on
+   the screen show the selection.
+6. Turn **LEVEL/DATA** to choose a row; click **DATA** to edit that row, then
+   turn LEVEL/DATA again. The rows choose **Momentary/Latch** and **FX returns
+   Off/On**. Click DATA again to leave row editing.
+7. In Latch mode a step click starts/switches a repeat; clicking the same step
+   again stops it.
+
+Use the encoder `+`/`−` buttons or scroll over an encoder to turn it. The
+launcher makes a local device-label/group overlay in the disposable copy:
+SETTINGS, FUNCTION, TRACK and PATTERN are mouse-latchable modifiers, and stock
+key code 32 (previously labelled PITCH by DigiEmu) is labelled **DATA**. All
+physical input wires and codes remain unchanged. Click **latch / clear** if a
+modifier is stuck.
+
+The physical knob mapping follows the stock event indices used by Model-TG:
+
+| Samples panel encoder | On the retrig page |
+|---|---|
+| PITCH | Drive |
+| DECAY | Crush |
+| SMPL START | Rate reduction |
+| SMPL LENGTH | Pump |
+| CUTOFF | Filter: turn left for LP, right for HP, centre off |
+| RESONANCE | Filter resonance |
+| DELAY SEND | Ring modulation |
+| REVERB SEND | Noise riser |
+| LFO SPEED | Gate division |
+| VOL+DIST | Tape stop |
+| SWING/NUDGE | Vinyl |
+| CHANCE/COND | Flanger |
+
+REVERB SIZE and DELAY TIME are unused on this page. Master VOLUME remains a
+stock control. Resonance needs the filter engaged to be audible.
+
+**BACK** resets master FX and a latched repeat without closing the page.
+**RETRIG**, SETTINGS or WAVE closes the page; PATTERN closes it for stock pattern
+selection. Repeats fade out on close, but FX and track selection persist.
+**SETTINGS + BACK** resets FX from outside the page too.
+
+Current UI limitations: pad LEDs still follow stock firmware rather than the
+new selection (use the screen boxes), and the bottom-line FX hint's expiry is
+refreshed on the next UI event rather than by a dedicated page timer.
+
+## Automated tests
+
+Verified locally with the factory-enabled Samples 1.13 snapshot: **29 unit
+checks passed**, the native panel integration passed, all four DSP differential
+cases passed, and the real Tk GUI started with live audio and the latchable
+SETTINGS/DATA overlay. The current linked DSP/UI payload is 14,576 bytes.
+These are emulator results, not physical-device validation.
+
+No firmware is needed for the unit tests:
+
+```sh
+python3 -m unittest discover -s tools -p 'test_*samples_fx.py'
+```
+
+Run the native panel test against a fresh disposable work directory:
+
+```sh
+LIBUNICORN_PATH=/Applications/digiemu.app/Contents/Frameworks/unicorn/lib \
+  ../digiemu/.venv/bin/python tools/test_samples_ui_emulator.py \
+  --digiemu ../digiemu \
+  --firmware-dir ../model-samples-analysis/.local-emulator/test-firmware \
+  --work build/samples-ui-test
+```
+
+This test uses **press/release/turn through DigiEmu's real panel input API**.
+It does not set the FX/retrig control state through the debug mailbox. It checks
+opening/closing, momentary newest-held/fallback, track selection, every FX knob,
+DATA row editing, latch, reset, FX returns, global reset, repeated reopen/cleanup
+and Pattern closing. It saves screen PNGs, `audio.wav`, `panel-inputs.json` and
+`ui-results.json` under the work directory.
+
+The DSP differential test is retained separately:
+
+```sh
 LIBUNICORN_PATH=/Applications/digiemu.app/Contents/Frameworks/unicorn/lib \
   ../digiemu/.venv/bin/python tools/test_samples_fx_emulator.py \
   --digiemu ../digiemu \
   --firmware-dir ../model-samples-analysis/.local-emulator/test-firmware \
-  --work build/samples-emulator-test
+  --work build/samples-dsp-test
 ```
 
-Substitute your actual factory-enabled firmware folder. The library override
-above uses the installed macOS app's patched Unicorn; omit/adjust it if the
-checkout environment already provides the patched library.
+It creates independent stock, bypass, dry-control and exercised copies. It
+checks byte-identical stock/bypass PCM over a one-second pattern segment,
+unchanged dry PCM when recording histories, all six histories receiving audio,
+all twelve controls changing PCM versus the matching dry timeline, repeat/return
+ramps, reset, persistence, command consumption and payload boundary guards.
+This is a smoke/differential test, not a golden-reference proof of audio quality.
+Its debug mailbox remains available for focused DSP tests:
 
-Choose a **new** `--work` directory for every run; existing output is refused.
-The harness creates separate stock, bypass, dry-control and exercised copies,
-including independent writable card images. On macOS files are cloned CoW when
-possible; elsewhere the fallback copies the files, which can take considerable
-disk space. It never uses hard links for writable inputs.
+- `command_knob`: shared FX index, 2–13 (not the physical scan encoder number).
+- `command_delta`: signed delta, consumed at the next block.
+- `command_reset`: requests FX reset at the next block.
 
-Outputs under `--work`:
+The JSON symbol map exposes these words. This is a one-slot mailbox: wait until
+a delta has been consumed before sending another. The interactive panel does
+not use this mailbox; its view's encoder handler calls the same DSP directly.
 
-- `payload/samples_fx.{s,o,elf,bin,json}`: build products and symbol map.
-- `stock/`, `bypass/`, `dry/`, `exercise/`: disposable emulator firmware folders.
-- Each case's `audio.wav`, `final.png`, and `result.json`.
-- `results.json`: aggregate comparison and assertion results.
+## Implementation and hardware boundary
 
-## What is being patched, and where
+`tools/build_samples_fx.py` extracts shared DSP/tables/state, the renderer,
+repeat-key state machine, pad handler and drawing helpers from `src/model_tg.s`.
+It links them with `src/samples_fx_glue.s` and `src/samples_fx_ui.s`, without the
+added Cycles sampler engines or machine-select UI. The new page subclasses the
+stock Samples **base View**, clones its vtable group, and uses stock allocation,
+reference-holder, view-stack presentation and deferred close/destruction.
 
-`tools/build_samples_fx.py` extracts the shared DSP and its tables/state from
-`src/model_tg.s`, relocates the identified Samples runtime dependencies, and
-links it with `src/samples_fx_glue.s`. It excludes the Model-TG sampler engines,
-view construction, rendering, transfer identity changes and Cycles machine
-optimizations. Source boundaries and the knob entry are checked; the linker
-rejects unresolved dependencies. The payload and shared source hashes are
-recorded in JSON. The stock Cycles builder is unchanged.
+Guest-memory hooks for Samples OS 1.13:
 
-The harness restores a stock snapshot, validates its hook/capacity instructions,
-checks resident sample usage, then modifies **guest memory only**:
-
-| Samples site | Development hook |
+| Site | Hook |
 |---|---|
-| `0x40058892`, output-call site | Once per block, before stock sends/mix; command mailbox and `rtg_audio` |
-| `0x400555b4`, mixer entry | `rtg_fxpass` for each L/R return pass; stock prologue replayed |
-| `0x40055adc`, mixed-bus scaling call | `mfx_master` for Noise/Vinyl, followed by stock x4 scaling |
+| `0x40058892` | Once per block before stock sends/mixing; DSP and block clock |
+| `0x400555b4` | Mixer entry; L/R return repeat passes, replaying stock prologue |
+| `0x40055adc` | Noise/Vinyl on the mixed bus, then stock x4 scaling |
+| `0x4007146c` | Key accessor; Settings chords and repeat keys |
+| `0x4001e8d8` | Pad-event method; track selection while the page is up |
 
-The wrapper tail-calls stock output at `0x4005575e` with its arguments intact.
-The channels are stock Samples' six mono channels at `0x80001b48`; the Cycles
-sampler's stereo side streams are disabled. Return streams retain the shared
-DSP's indices 12–15. The block clock is incremented at the once-per-block hook.
-Tempo, audio clock, transport step and bar timing use Samples addresses, not
-a single global Cycles-to-Samples offset.
+The six stock mono channels start at `0x80001b48`. The Cycles sampler's stereo
+side streams are disabled; return streams retain shared indices 12–15. Runtime
+dependencies use Samples addresses, not a single global relocation offset.
+The stock Cycles builder and executable source are unchanged.
 
-The prototype reduces all five capacity immediates from `0x04000050` to
-`0x03c00050`, then clears/uses histories at `0x4dedd4e0..0x4e2dd4e0`. It refuses
-snapshots with resident sample allocations beyond the reduced limit. This
-preserves the stock delay ring. See [the investigation](notes/model_samples_fx_port.md)
-for allocator evidence and the paths still requiring audit.
+The injector checks the supported stock MAIN OS hash, hook/capacity instructions,
+resident sample usage, payload digest and empty development scratch space. It
+reduces all five capacity immediates from `0x04000050` to `0x03c00050`, reserving
+histories at `0x4dedd4e0..0x4e2dd4e0` without overlapping the stock delay ring.
+The [allocator investigation](notes/model_samples_fx_port.md) records evidence
+and paths still requiring audit. Histories are cleared on page open and on
+re-enabling a selected track or FX return.
 
-The 12,464-byte payload currently uses **`0x47000000` as emulator scratch**.
-The injector requires this region and its guards to be empty. It is **not a
-hardware reservation**: no boot clear, heap, cache or filesystem ownership is
-changed to protect it. The emulator checks guards afterwards. Do not append
-this blob to a `.syx`, copy these runtime patches to a device, or treat restoring
-a preboot snapshot as a cold-boot test.
+**`0x47000000` is emulator scratch, not a hardware code reservation.** No boot
+clear, heap, cache or filesystem ownership changes protect it on a real device.
+Neither the launcher nor builder produces an installable `.syx`. Do not reuse
+these runtime patches on hardware, or open the disposable patched resume
+snapshot with an ordinary stock emulator session.
 
-## Development controls
-
-The JSON symbol map exposes the DSP's state and these mailbox words:
-
-- `command_knob`: panel knob number **plus one** (2–13).
-- `command_delta`: signed knob delta; consumed and cleared at the next block.
-- `command_reset`: nonzero requests the normal master-FX reset at the next block.
-
-A single producer must wait for the delta to be consumed before sending another
-command; this is a one-slot test mailbox, not an input queue. The shared knob
-entry accepts the signed delta directly instead of calling the stock UI event
-acceleration function. Gate advances one division per command sign, just as the
-shared UI handler does. Resonance is tested with the filter engaged.
-
-The harness also writes `rtg_on`, `rtg_latch`, `rtg_lstep`, `rtg_held`, `rtg_sel`
-and `rtg_fx` directly. Those writes test the engine's behavior, **not** actual
-pad/step event delivery, page lifecycle, encoder acceleration or screen/LED UI.
-
-## Checks
-
-The integration harness checks:
-
-- Stock and patched-bypass pattern PCM are byte-identical for the captured
-  one-second segment (48,000 stereo frames).
-- Recording histories without applying effects is byte-identical to the
-  matched stock segment; all six track histories contain audio.
-- All twelve controls reach their intended DSP state and change captured PCM
-  versus the matching dry timeline. This is a smoke/differential test, not a
-  golden-reference proof of each effect's transfer function or audio quality.
-- FX reset, a latched repeat, repeat release, and return-stream wet ramps.
-- Momentary newest-held priority, fallback to an older held step, and release.
-- FX continue after the page-state flag closes; deselection fades stream FX out.
-- No emulator halt, command consumption, and unchanged payload boundary guards.
-
-The tests do **not** establish physical CPU headroom, cache coherency, maximum
-sample occupancy, all loading/compaction/preview paths, actual panel UI behavior,
-or safe cold boot/recovery. Those, a real code-memory reservation and a
-Samples-only builder remain necessary before creating hardware firmware.
+Before hardware firmware is possible: reserve code/state memory, implement
+safe startup/cache handling, audit loading/compaction/preview at maximum sample
+occupancy, validate transport/pattern/tempo changes and real CPU headroom, and
+build/verify a Samples-only update container. Restoring a settled snapshot is
+not a cold-boot or recovery test.

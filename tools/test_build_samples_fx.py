@@ -9,7 +9,8 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 
-from build_samples_fx import ADDRESS_MAP, ROOT, PAYLOAD_BASE, build, section, shared_source
+from build_samples_fx import ADDRESS_MAP, ROOT, PAYLOAD_BASE, build, section, shared_source, ui_source
+from run_samples_fx_emulator import panel_overlay
 from map_samples_fx import SAMPLE_POOL_CAPACITY
 from test_samples_fx_emulator import install
 
@@ -58,6 +59,45 @@ class SourceExtractionTests(unittest.TestCase):
             shared_source(self.shared.replace('jsr     0x4006f73a', 'jsr     0x4006f73c'))
 
 
+class NativeUISourceTests(unittest.TestCase):
+    def test_shared_handlers_and_renderer_are_relocated(self):
+        text = ui_source((ROOT / 'src/model_tg.s').read_text())
+        code = '\n'.join(line.partition('|')[0] for line in text.splitlines())
+        for label in ('rtg_render:', 'sys_left:', 'rtg_zero:', 'pad_hook:', 'kh_rtg:'):
+            self.assertIn(label, code)
+        for old in ('0x40070dea', '0x40071a04', '0x401001d0', '0x4001d188', '0x40124b58'):
+            self.assertNotIn(old, code)
+        self.assertIn('sp_redraw', code)
+        self.assertIn('0x4001e8e0', code)
+        self.assertIn('sp_fmt_s', code)
+
+    def test_overlay_keeps_input_codes_and_makes_settings_latchable(self):
+        import tomllib
+        source = '''[panel.labels]
+32 = "PITCH"
+[[panel.group]]
+name = "keys"
+kind = "button"
+codes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 32]
+layout = "row"
+'''
+        overlay = panel_overlay(source)
+        result = tomllib.loads(overlay)['panel']
+        self.assertEqual(result['labels']['32'], 'DATA')
+        groups = result['group']
+        modifiers = next(g for g in groups if g['name'] == 'modifiers')
+        self.assertIn(13, modifiers['codes'])
+        codes = [c for group in groups for c in group['codes']]
+        self.assertEqual(sorted(codes), list(range(1, 16)) + [32])
+        self.assertEqual(panel_overlay(overlay), overlay)
+
+
+    def test_unknown_gui_layout_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'panel layout changed'):
+            panel_overlay('[panel.labels]\n32="PITCH"\n[[panel.group]]\n'
+                          'name="keys"\nkind="button"\ncodes=[13,32]\n')
+
+
 class InjectionSafetyTests(unittest.TestCase):
     def setUp(self):
         self.stock = bytes(0xA1800)
@@ -71,6 +111,12 @@ class InjectionSafetyTests(unittest.TestCase):
 
     def test_changed_hook_is_rejected_before_guest_writes(self):
         self.mem[0x40058892] = 0xff
+        with self.assertRaisesRegex(ValueError, 'hook site differs'):
+            install(self.session, self.report, b'payload', self.stock)
+
+    def test_changed_ui_hook_is_rejected_before_guest_writes(self):
+        self.report['native_panel_ui'] = True
+        self.mem[0x4007146C] = 0xff
         with self.assertRaisesRegex(ValueError, 'hook site differs'):
             install(self.session, self.report, b'payload', self.stock)
 
@@ -100,9 +146,11 @@ class PayloadBuildTests(unittest.TestCase):
             b = build(Path(folder) / 'b')
             self.assertEqual(a, b)
             self.assertFalse(a['hardware_installable'])
+            self.assertTrue(a['native_panel_ui'])
             self.assertEqual(a['payload_base'], PAYLOAD_BASE)
             self.assertLess(a['payload_bytes'], 65536)
-            for label in ('samples_audio', 'samples_mix', 'rtg_lstep', 'mfx_drv',
+            for label in ('samples_audio', 'samples_mix', 'samples_key', 'page_obj',
+                          'sp_encoder', 'sp_render', 'pad_hook', 'rtg_lstep', 'mfx_drv',
                           'command_knob', 'command_delta', 'command_reset'):
                 self.assertGreaterEqual(a['symbols'][label], PAYLOAD_BASE)
                 self.assertLess(a['symbols'][label], PAYLOAD_BASE + a['payload_bytes'])
