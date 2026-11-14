@@ -1,8 +1,9 @@
 # Model-TG
 
-> **Model:Samples branch:** an interactive DigiEmu prototype of retrig and
-> master FX is available. See [launch and controls](docs/SAMPLES_EMULATOR.md).
-> This is not installable Samples firmware; the Cycles builds below must not
+> **Model:Samples branch:** retrig/master FX have an interactive DigiEmu
+> prototype and an experimental standalone `.syx` builder. See
+> [Samples builds and controls](docs/SAMPLES_EMULATOR.md).
+> **Not validated for physical hardware.** The Cycles builds below must not
 > be installed on a Samples.
 
 **Unofficial firmware additions for the Elektron Model:Cycles (OS 1.13):

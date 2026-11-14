@@ -1,14 +1,15 @@
 # Model:Samples 1.13: retrig and master FX port investigation
 
-## Status: not installable
+## Status: experimental standalone image; not hardware-validated
 
 This is groundwork for porting **only** the output retrig and master FX in
 [the user guide](../USER_GUIDE.md#retrig-and-master-fx), keeping the stock
 Model:Samples sampler and project format. An executable **interactive emulator
 prototype with native panel UI** now exists: see
 [SAMPLES_EMULATOR.md](../SAMPLES_EMULATOR.md) for launch/test commands, results,
-and limitations. There is still no cold-boot Samples firmware builder. The existing `build.py` and
-`Model-TG.syx` target **Cycles only**. Do not install them on Samples or bypass their stock hash
+and limitations. `tools/build_samples_firmware.py` now produces an experimental
+Samples-only `.syx` with startup clearing and a filesystem-cache code/state
+reservation. The existing `build.py` and `Model-TG.syx` target **Cycles only**. Do not install them on Samples or bypass their stock hash
 checks. No device communication is needed for this investigation.
 
 ## Images examined
@@ -107,12 +108,15 @@ reduced pool:     [0x4a2dd490, 0x4dedd4e0)   0x03c00050 bytes
 retrig histories: [0x4dedd4e0, 0x4e2dd4e0)   0x00400000 bytes
 ```
 
-Reducing all five capacity immediates by 4 MiB would keep those reporting and
-allocation paths consistent. This is a proposed hardware reservation, **not a
-hardware patch or a proof that all writers have been found**. Audit compaction, preview,
-project reload, failure/rollback paths, and allocator alignment bounds before
-using it on hardware. The emulator prototype applies the reduced capacities
-in guest memory only; the vendor image and physical device remain unchanged.
+Reducing all five capacity immediates by 4 MiB keeps those reporting and
+allocation paths consistent. This reservation is implemented in the emulator
+prototypes and experimental standalone image, **not proven hardware-safe or a
+proof that all writers have been found**. Audit compaction, preview, project
+reload, failure/rollback paths, and allocator alignment bounds before physical
+use. The emulator prototype applies the reduced capacities
+in guest memory only. The new standalone builder applies the same reduction
+to a **local output copy** of MAIN OS; source firmware and physical devices
+remain unchanged.
 
 The end is significant: stock code clears/uses a scratch buffer starting at
 `0x4e2dd4e0` (`0x400a6526..0x400a6536`, 0x160 bytes), and the word staging
@@ -124,12 +128,15 @@ near `0x4e800000` overlaps this stock delay ring.
 
 ## What still needs implementing/verifying
 
-1. **Memory ownership first.** Audit the allocator paths above and locate the
-   filesystem cache layout. Reserve history space by reducing the allocator's
-   usable range, not merely choosing an apparently empty address. Cycles uses
-   16 histories of 131,072 signed 16-bit samples (4 MiB), including its custom
-   stereo side streams. Samples needs its own stream-layout decision. Reserve
-   payload/state memory and adapt startup clearing and cache handling too.
+1. **Memory ownership first.** The standalone image now reduces all five
+   capacity operands, links code/state at `0x401b0760`, retires cache entry 0
+   (`0x401f0760`, 20-byte metadata), and skips only the payload during stock
+   BSS clearing. History initialization is part of the boot hook. The chunk
+   blanking buffer `[0x401ac760,0x401b0760)` stays zero. Independently traced
+   Samples cache initializers are `0x4007831a` (prev-link start) and
+   `0x40078350` (head pointer); their immediate operands are advanced by one
+   entry. Keep auditing all allocator/compaction/preview/DMA writers. A
+   reservation and successful emulation do not prove physical memory safety.
 2. **Audio hooks and timing.** The emulator prototype now hooks the stock
    output call at `0x40058892` before sends/mixing and supplies `blk_clk`,
    Samples' mono-channel addresses and relocated timing globals to the shared
@@ -150,10 +157,13 @@ near `0x4e800000` overlaps this stock delay ring.
    Selection LEDs and a dedicated hint-expiry redraw timer remain unported.
    Continue checking stock behavior outside the page and on unusual view-stack
    transitions.
-5. **Samples-only builder.** Require the Samples hash above, assert every
-   replaced stock byte, retain the Samples update container/identity, validate
-   branch/stack/memory bounds, and round-trip unpack/repack. Do not add a
-   force option to the Cycles builder.
+5. **Samples-only builder.** Implemented in `tools/build_samples_firmware.py`:
+   pins the Samples MAIN hash and transport device ID, asserts all stock
+   instructions, enforces a one-cache-block aligned payload budget, retains
+   the Samples container and verifies every decompressed section after
+   repacking. The boot-clear assembly is separately executed in Unicorn with
+   nonzero-memory and register/stack guards. Continue cold-boot/runtime and
+   recovery testing; do not add a force option to the Cycles builder.
 6. **Hardware validation, after explicit installation approval and backups.**
    Start with a feature-disabled boot, then bypassed audio, UI, histories,
    repeat, and individual FX. Check maximum sample occupancy, sample loading

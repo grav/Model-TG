@@ -1,6 +1,7 @@
 # Model:Samples retrig/master FX in DigiEmu
 
-**Interactive emulator prototype. Not hardware-installable firmware.**
+**Interactive emulator prototype. An experimental standalone `.syx` is now
+available locally; it is not validated or approved for physical hardware.**
 
 You can now use the emulator's panel to open the retrig page, play momentary or
 latched repeats, select tracks with the pads and adjust all twelve master FX.
@@ -8,7 +9,61 @@ The handlers and screen renderer are **native ColdFire firmware code**, not
 Python input interception or host-side DSP. Stock Samples playback, factory
 samples and project/sample formats remain in use.
 
-## Launch the interactive panel
+## Generate a standalone firmware file
+
+The Samples-only builder now packages the native DSP/UI and cold-boot hook into
+a real Model:Samples update container, starting from **your own** stock OS 1.13:
+
+```sh
+python3 tools/build_samples_firmware.py \
+  --stock /path/to/model-samples_OS1.13.zip \
+  --tool build/elektron-firmware-tool/elektron-firmware-tool \
+  --out build/Model-TG-Samples-experimental.syx
+```
+
+`--stock` also accepts the extracted `.syx`. The builder refuses an existing
+output/work folder, pins the stock MAIN OS hash and Samples device ID, checks
+every replaced instruction, and round-trips the result. All non-MAIN sections
+(bootstrap, updater and metadata) must remain byte-identical. The container keeps
+stock version 1.13 and Samples identity; its SHA-256 identifies the modified file.
+
+Unlike the snapshot-injection prototype, this image links the payload at
+`0x401b0760`, retires the first of the stock filesystem's sixteen 16 KiB cache
+blocks, and replaces the boot-clear function. Boot still clears the complete
+stock BSS, skipping only the aligned payload, and initializes the 4 MiB history
+reservation. Stock CPU cache configuration is unchanged. The filesystem's
+chunk-blanking buffer at `0x401ac760..0x401b0760` remains zero. The payload is
+currently **14,672 bytes**, leaving fifteen cache blocks for stock firmware.
+
+This `.syx` can be checked/imported by ordinary DigiEmu; it needs **no runtime
+injection**. Run **Check firmware**, comparing against the unmodified Samples
+1.13 image, before using it. Adding it as a separate firmware creates a separate
+emulated card: it does **not** automatically copy your restored factory bank or
+projects. Preserve the working stock profile/card and follow the analysis
+repository's factory-bank documentation if setting up the new profile. The
+host panel's mouse-latchable SETTINGS/DATA grouping still needs the same local
+`devices/model-samples.toml` overlay made by `panel_overlay()` in the launcher;
+firmware cannot change DigiEmu's host-side button groups. The older injection
+launcher below remains a separate workflow, not a loader for the new `.syx`.
+
+The generated image passed DigiEmu's standalone **Check firmware** against
+stock: container layout, its own bootloader, cold boot and runtime all passed.
+The six named comparison screenshots matched stock; a transient frame differed,
+and captured bypass audio was identical over 6.3 seconds. That run has no
+restored factory bank and does not verify the new FX audio at cold-boot addresses.
+DigiEmu warned its bundled checksum code was absent; `elektron-firmware-tool`
+separately reported valid checksums and exact decompressed section round-trip.
+All **37** stock-free port/builder tests passed with DigiEmu's Python, including
+execution of the ColdFire boot-clear routine.
+
+**Do not flash a physical Samples.** Container validity and emulator boot do not
+establish hardware safety, CPU headroom or allocator correctness at maximum
+sample occupancy. The builder never sends MIDI or contacts a physical device.
+Generated `.syx`, unpacked stock sections and private emulation artifacts stay
+under Git-ignored `build/`; do not distribute the resulting vendor-containing
+image.
+
+## Launch the snapshot-injected interactive panel
 
 Prerequisites: ColdFire binutils ([BUILD.md](BUILD.md)), a DigiEmu checkout with
 its Python environment/patched Unicorn, and a factory-enabled Samples OS 1.13
@@ -187,14 +242,26 @@ The [allocator investigation](notes/model_samples_fx_port.md) records evidence
 and paths still requiring audit. Histories are cleared on page open and on
 re-enabling a selected track or FX return.
 
-**`0x47000000` is emulator scratch, not a hardware code reservation.** No boot
-clear, heap, cache or filesystem ownership changes protect it on a real device.
-Neither the launcher nor builder produces an installable `.syx`. Do not reuse
-these runtime patches on hardware, or open the disposable patched resume
-snapshot with an ordinary stock emulator session.
+**The snapshot launcher's `0x47000000` is emulator scratch, not a hardware code
+reservation.** Only the separate standalone builder implements the boot-clear
+and filesystem-cache reservation described above; `build_samples_fx.py` still
+defaults to the original RAM-only prototype. Do not reuse those runtime scratch
+patches on hardware, or open a patched RAM snapshot with stock firmware.
 
-Before hardware firmware is possible: reserve code/state memory, implement
-safe startup/cache handling, audit loading/compaction/preview at maximum sample
-occupancy, validate transport/pattern/tempo changes and real CPU headroom, and
-build/verify a Samples-only update container. Restoring a settled snapshot is
-not a cold-boot or recovery test.
+Before any physical-device testing: audit loading/compaction/preview and all
+remaining memory writers at maximum sample occupancy; validate transport,
+pattern and tempo changes, USB/Transfer, recovery and real CPU/cache/DMA
+headroom. The standalone container and startup reservation are implemented, not
+a guarantee of safety. Restoring a settled snapshot is not a cold-boot test.
+
+Run both the original port checks and stock-free standalone-builder checks:
+
+```sh
+LIBUNICORN_PATH=/Applications/digiemu.app/Contents/Frameworks/unicorn/lib \
+  ../digiemu/.venv/bin/python -m unittest discover -s tools -p 'test_*samples*.py'
+```
+
+The standalone tests include executing the real ColdFire boot-clear code in
+Unicorn against nonzero memory: the entire stock BSS and histories must clear,
+the payload and boundary guards must survive, and saved registers/stack must be
+restored. This test does not model physical caches or DMA.

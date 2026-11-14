@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build an emulator-only Samples 1.13 retrig/master-FX payload and native UI.
+"""Build the Samples 1.13 retrig/master-FX payload and native UI.
 
-No vendor firmware is patched, packaged, or transmitted. Shared DSP and UI
-helpers are extracted from their existing source rather than forked. Cold boot
-is not implemented. See docs/SAMPLES_EMULATOR.md for the interactive launcher.
+This module alone never patches or packages vendor firmware. Its CLI defaults
+to emulator scratch; build_samples_firmware.py requests a relocated cold-boot
+payload with a separate startup hook. Shared DSP/UI helpers are extracted from
+their existing source. See docs/SAMPLES_EMULATOR.md for both workflows.
 """
 import argparse
 import hashlib
@@ -104,7 +105,7 @@ def ui_source(text):
             'KEY_RETRIG = 4\n' + '\n'.join(result) + '\n')
 
 
-def build(output, cross=None):
+def build(output, cross=None, *, payload_base=PAYLOAD_BASE, cold_boot=False):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     cross = cross or os.environ.get("CROSS") or next(
@@ -124,10 +125,15 @@ RTG_QN = 21600000
 RTG_BASE = 0x{HISTORY_BASE:08x}
 """
     assembly = output / "samples_fx.s"
-    assembly.write_text(glue + ui + constants + shared_source(shared) + ui_source(shared))
+    boot = (ROOT / 'src/samples_fx_boot.s').read_text() if cold_boot else ''
+    assembly.write_text('.globl samples_payload_start, samples_payload_end\n'
+                        '.text\nsamples_payload_start:\n' + glue + ui + constants
+                        + shared_source(shared) + ui_source(shared) + boot
+                        + '\n.balign 16\nsamples_payload_end:\n')
     obj, elf, binary = (output / f"samples_fx.{ext}" for ext in ("o", "elf", "bin"))
     subprocess.run([cross + "as", "-march=cfv4e", "-o", str(obj), str(assembly)], check=True)
-    subprocess.run([cross + "ld", f"-Ttext=0x{PAYLOAD_BASE:x}", "-e", "samples_audio",
+    subprocess.run([cross + "ld", f"-Ttext=0x{payload_base:x}", "-e",
+                    "samples_boot_clear" if cold_boot else "samples_audio",
                     "-o", str(elf), str(obj)], check=True)
     subprocess.run([cross + "objcopy", "-O", "binary", str(elf), str(binary)], check=True)
     syms = {}
@@ -139,16 +145,17 @@ RTG_BASE = 0x{HISTORY_BASE:08x}
     if len(payload) >= 0x10000:
         raise ValueError("development payload exceeds scratch budget")
     report = {
-        "format": "samples-fx-emulator-v1", "hardware_installable": False,
+        "format": "samples-fx-firmware-payload-v1" if cold_boot else "samples-fx-emulator-v1",
+        "hardware_installable": False, "cold_boot": cold_boot,
         "native_panel_ui": True,
-        "payload_base": PAYLOAD_BASE, "history_base": HISTORY_BASE,
+        "payload_base": payload_base, "history_base": HISTORY_BASE,
         "history_bytes": 0x400000, "payload_bytes": len(payload),
         "payload_sha256": hashlib.sha256(payload).hexdigest(),
         "shared_source_sha256": hashlib.sha256(shared.encode()).hexdigest(),
         "symbols": syms,
     }
     (output / "samples_fx.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(f"Emulator-only DSP/UI: {len(payload):,} bytes at 0x{PAYLOAD_BASE:08x}")
+    print(f"Experimental DSP/UI: {len(payload):,} bytes at 0x{payload_base:08x}")
     return report
 
 
