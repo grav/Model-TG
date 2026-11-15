@@ -53,7 +53,7 @@ and captured bypass audio was identical over 6.3 seconds. That run has no
 restored factory bank and does not verify the new FX audio at cold-boot addresses.
 DigiEmu warned its bundled checksum code was absent; `elektron-firmware-tool`
 separately reported valid checksums and exact decompressed section round-trip.
-All **37** stock-free port/builder tests passed with DigiEmu's Python, including
+All **42** stock-free port/builder/audit tests passed with DigiEmu's Python, including
 execution of the ColdFire boot-clear routine.
 
 **Do not flash a physical Samples.** Container validity and emulator boot do not
@@ -62,6 +62,50 @@ sample occupancy. The builder never sends MIDI or contacts a physical device.
 Generated `.syx`, unpacked stock sections and private emulation artifacts stay
 under Git-ignored `build/`; do not distribute the resulting vendor-containing
 image.
+
+## Factory-project sample RAM audit
+
+The factory content is comfortably below the reduced sample pool:
+
+| Measurement | Bytes | MiB |
+|---|---:|---:|
+| Reduced sample-file pool | 62,914,640 | 60.00008 |
+| STOCK project: observed peak high-water | 9,072,912 | 8.65 |
+| Observed headroom | 53,841,728 | 51.35 |
+| **Entire 396-file factory library**, each file rounded to 16 bytes | 29,433,744 | 28.07 |
+
+The complete factory library figure includes sample-file headers and trailers,
+not just PCM; it excludes storage-only 16 KiB bank padding. The stock file loader
+shares an already loaded file's PCM when the file is referenced again
+(`0x400a16bc..0x400a1754`), rather than allocating a full copy per track.
+
+`tools/check_samples_factory_memory.py` copied the offline factory-enabled
+stock snapshot/card, applied only the same five pool-capacity reductions as the
+port, and selected **all 96 slots, A01–F16**, through real panel inputs. This
+includes empty slots. Transport was stopped; the allocator high-water and
+freed counters were sampled every 5 emulated milliseconds. High-water stayed
+at 9,072,912 bytes, freed stayed zero, and no emulator halt or pool overrun
+occurred. Screenshots were spot-checked for the requested bank/pattern changes.
+The running modified panel/profile was not touched.
+
+Reproduce using a **new** work directory:
+
+```sh
+LIBUNICORN_PATH=/Applications/digiemu.app/Contents/Frameworks/unicorn/lib \
+  ../digiemu/.venv/bin/python tools/check_samples_factory_memory.py \
+  --bank ../model-samples-analysis/.local-emulator/factory-content.bin \
+  --digiemu ../digiemu \
+  --firmware-dir ../model-samples-analysis/.local-emulator/test-firmware \
+  --work build/samples-factory-memory-test
+```
+
+Results, input events and 96 screenshots are written under the work directory.
+The bank is pinned to the verified reconstruction's SHA-256 and its descriptor
+sizes/CRC are checked before summing. This is a sample-pool/selection test,
+**not playback of every step, audio verification of every pattern, a cold-boot
+rerun, or a full-memory fragmentation/preview/load-failure stress test**. Custom
+projects that used more than 60 MiB remain a compatibility concern even though
+the factory patterns do not approach that limit.
 
 ## Launch the snapshot-injected interactive panel
 
