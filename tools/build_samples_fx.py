@@ -48,10 +48,18 @@ def shared_source(text):
     names = section(text, "\nrtg_s_mode:", "\nrtg_names:")
     state = "rtg_s_mode:" + names + state
     decimal = "sys_dec:\n" + section(text, "\nsys_dec:\n", "\n| sys_tick:")
-    # The real UI uses the stock knob-event acceleration function. In this
-    # development payload d0 already carries a signed delta from the mailbox.
+    # Strip only the Cycles event/acceleration wrapper, retaining PR #22's
+    # shared snap logic. Samples supplies d0 from its own UI accelerator (or
+    # the debug mailbox); its FUNC+Filter exception lives in samples_fx_ui.s.
     entry = """mfx_knob:
-    pea     4                     | clicks: 1 each slowly, 4 turned fast
+    moveq   #4,%d0               | normally 1 each slowly, 4 turned fast
+    tstl    rtg_func
+    beqs    mfk_speed
+    cmpil   #6,%d3
+    bnes    mfk_speed
+    moveq   #1,%d0               | FUNC + Filter: count real clicks at zero
+mfk_speed:
+    movel   %d0,%sp@-
     pea     1
     movel   %d2,%sp@-
     jsr     0x4006f73a
