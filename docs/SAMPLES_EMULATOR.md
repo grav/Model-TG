@@ -309,3 +309,32 @@ The standalone tests include executing the real ColdFire boot-clear code in
 Unicorn against nonzero memory: the entire stock BSS and histories must clear,
 the payload and boundary guards must survive, and saved registers/stack must be
 restored. This test does not model physical caches or DMA.
+
+## Separate PR #27 MIDI-gate build
+
+The `model-samples-midi-gate` branch adds the experimental Gate Clock row to
+Device Config, without PR #22 snapping. The ordinary standalone builder on this
+branch produces a gate-enabled image; the row defaults to OFF. Use a new output
+name and work directory to preserve prior working images. The payload is 15,840
+bytes and still fits the same single cache block; history RAM is unchanged.
+
+The stock-free suite also executes the relocated UART routines, including
+clock divisions, Start alignment, expiry, stop, queued-TX claim deferral,
+mode transitions, disabled producer replay, fixed states and saved registers.
+For the **menu** integration test, first cold-boot the generated `.syx` using
+DigiEmu's firmware check. A previously settled stock snapshot cannot exercise a
+constructor that already ran before patching. Then run:
+
+```sh
+LIBUNICORN_PATH=/Applications/digiemu.app/Contents/Frameworks/unicorn/lib \
+  ../digiemu/.venv/bin/python tools/test_samples_gate_ui_emulator.py \
+  --digiemu ../digiemu \
+  --firmware-dir /path/to/the/gate-firmware-profile \
+  --payload-report build/YOUR-BUILD-WORK/payload/samples_fx.json \
+  --work build/NEW-GATE-UI-WORK
+```
+
+This test locks and clones the profile, checks its MAIN payload hash, then
+uses real panel inputs to edit all six modes and restore MIDI. It does not
+establish jack voltage, polarity, physical UART timing, or MIDI/CV compatibility.
+See [Samples gate notes](notes/samples_midi_gate.md) before any hardware trial.

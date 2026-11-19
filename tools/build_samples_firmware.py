@@ -30,6 +30,10 @@ HOOKS = (
     (0x40055ADC, '4878000448798000c6904ebafa82', 'mfx_master', 'master', 3),
     (0x4007146C, '206f00042028000c4e75', 'samples_key', 'jmp', 2),
     (0x4001E8D8, '4e56ffbc48d73cfc', 'pad_hook', 'jmp', 1),
+    (0x40001154, '2208d2804ab9404acb14', 'gate_tx_buffer', 'jmp', 2),
+    (0x4000124E, '4ab9404acb14', 'gate_tx_byte', 'jmp', 0),
+    (0x40001320, '1039ec074004', 'gate_flush_status', 'jmp', 0),
+    (0x4003402A, '4cef7c7c0018', 'samples_gate_config', 'jmp', 0),
 )
 
 

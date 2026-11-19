@@ -47,6 +47,9 @@ def install(session, report, payload, stock):
     hooks = [(0x40058892, 6), (0x400555B4, 8), (0x40055ADC, 14)]
     if report.get('native_panel_ui'):
         hooks += [(0x4007146C, 10), (0x4001E8D8, 8)]
+    from build_samples_firmware import HOOKS
+    gate_hooks = [h for h in HOOKS if h[2].startswith(('gate_', 'samples_gate_'))] if report.get('midi_gate') else []
+    hooks += [(address, len(bytes.fromhex(old))) for address, old, *_ in gate_hooks]
     for address, n in hooks:
         if read(address, n) != stock[address - BASE:address - BASE + n]:
             raise ValueError(f"snapshot hook site differs from stock: {address:08x}")
@@ -80,6 +83,8 @@ def install(session, report, payload, stock):
     if report.get('native_panel_ui'):
         put(m, 0x4007146C, b'\x4e\xf9' + struct.pack('>I', syms['samples_key']) + b'\x4e\x71' * 2)
         put(m, 0x4001E8D8, b'\x4e\xf9' + struct.pack('>I', syms['pad_hook']) + b'\x4e\x71')
+    for address, old, label, _, nops in gate_hooks:
+        put(m, address, b'\x4e\xf9' + struct.pack('>I', syms[label]) + b'\x4e\x71' * nops)
     return {'resident_sample_bytes': used, 'reduced_capacity': capacity,
             'sample_pool_base': SAMPLE_POOL_BASE}
 

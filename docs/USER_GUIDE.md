@@ -310,6 +310,32 @@ are included (build with `--no-tweaks` to leave them out):
   **PAGE** to hear it, with its note, p-locks and sound lock.
 - **Browser scroll:** long names scroll in the browser.
 
+## Experimental Samples MIDI OUT gate clock (separate branch)
+
+Available only on `model-samples-midi-gate`, based on `model-samples` without
+FUNC FX snapping. **Settings > Device > Gate Clk** repurposes physical MIDI
+OUT/THRU; it is **OFF** (ordinary MIDI) on every boot and is not project-saved.
+Press DATA to select editing, then turn DATA to change the mode:
+
+| Mode | Behavior |
+|---|---|
+| OFF | Ordinary MIDI output |
+| 1/4, 1/8, 1/16 | Quarter-, eighth-, sixteenth-note clock |
+| 24PPQN | One pulse per stock MIDI clock tick |
+| IDLE, BREAK | Fixed UART states for measurement |
+
+Enable stock **CLK OUT**, select **OUT TO MID/M+U** and **OUT/THRU OUT**.
+Clock uses outgoing MIDI timing, emits its first pulse on Start, and releases
+UART BREAK for about 5 ms per pulse while the sequencer plays. Stop restores
+the BREAK baseline. Gate mode discards physical MIDI messages, including thru;
+USB and MIDI input paths are not intentionally changed. Switching waits for
+pending physical TX to drain; OFF restores normal MIDI output.
+
+**Experimental, not electrically hardware-validated.** IDLE/BREAK describe UART
+states, not guaranteed jack voltage or polarity. Measure tip and ring relative
+to sleeve with a TRS breakout before connecting CV equipment. Do not assume
+this is a protected CV output. See [implementation and validation limits](notes/samples_midi_gate.md).
+
 ## Files Model-TG writes
 
 | where | what |

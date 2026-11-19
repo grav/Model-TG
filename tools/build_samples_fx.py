@@ -105,6 +105,37 @@ def ui_source(text):
             'KEY_RETRIG = 4\n' + '\n'.join(result) + '\n')
 
 
+def gate_source(text):
+    """PR #27 UART core plus existing framework closures, relocated to Samples."""
+    core = (ROOT / 'src/midi_gate.inc').read_text()
+    # The upstream value renderer targets a list page, not Samples' icon menu.
+    core = core.replace('jmp     gm_val', 'jmp     samples_gate_value')
+    core = core.replace('.asciz "Gate Clock"', '.asciz "Gate Clk"')
+    helpers = ('gm_lab:\n' + section(text, '\ngm_lab:\n', '\n| ---- the sample\'s name')
+               + 'lm_add_row:\n' + section(text, '\nlm_add_row:\n', '\n| ---- SMP: the sample file-system commands, answered by the raw ones ----')
+               + 'new_slot2_invoker:\n' + section(text, '\nnew_slot2_invoker:\n',
+                                                '\n|------------------------------------------------------------------\n| advance_scale:'))
+    relocations = {
+        0x4049DCA0: 0x404ACB14, 0x4049DCBC: 0x404ACB30,
+        0x4049DCCC: 0x404ACB40, 0x40A7883C: 0x4096814C,
+        0x40076082: 0x400750E2, 0x400732F8: 0x40072358,
+        0x400732EC: 0x4007234C,
+    }
+    lines = []
+    for line in (core + '\n' + helpers).splitlines():
+        code, sep, comment = line.partition('|')
+        def relocate(match):
+            address = int(match.group(), 16)
+            if 0x40000000 <= address < 0x48000000:
+                if address not in relocations and address not in (0x4000115e, 0x40001226,
+                        0x40001254, 0x400012c4, 0x40001326):
+                    raise ValueError(f'unmapped gate dependency: {match.group()}')
+            return f'0x{relocations[address]:08x}' if address in relocations else match.group()
+        code = re.sub(r'0x[0-9a-fA-F]{8}\b', relocate, code)
+        lines.append(code + (sep + comment if sep else ''))
+    return '\n'.join(lines) + '\n' + (ROOT / 'src/samples_midi_gate.s').read_text()
+
+
 def build(output, cross=None, *, payload_base=PAYLOAD_BASE, cold_boot=False):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
@@ -128,7 +159,7 @@ RTG_BASE = 0x{HISTORY_BASE:08x}
     boot = (ROOT / 'src/samples_fx_boot.s').read_text() if cold_boot else ''
     assembly.write_text('.globl samples_payload_start, samples_payload_end\n'
                         '.text\nsamples_payload_start:\n' + glue + ui + constants
-                        + shared_source(shared) + ui_source(shared) + boot
+                        + shared_source(shared) + ui_source(shared) + gate_source(shared) + boot
                         + '\n.balign 16\nsamples_payload_end:\n')
     obj, elf, binary = (output / f"samples_fx.{ext}" for ext in ("o", "elf", "bin"))
     subprocess.run([cross + "as", "-march=cfv4e", "-o", str(obj), str(assembly)], check=True)
@@ -147,7 +178,7 @@ RTG_BASE = 0x{HISTORY_BASE:08x}
     report = {
         "format": "samples-fx-firmware-payload-v1" if cold_boot else "samples-fx-emulator-v1",
         "hardware_installable": False, "cold_boot": cold_boot,
-        "native_panel_ui": True,
+        "native_panel_ui": True, "midi_gate": True,
         "payload_base": payload_base, "history_base": HISTORY_BASE,
         "history_bytes": 0x400000, "payload_bytes": len(payload),
         "payload_sha256": hashlib.sha256(payload).hexdigest(),

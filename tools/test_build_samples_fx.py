@@ -9,7 +9,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 
-from build_samples_fx import ADDRESS_MAP, ROOT, PAYLOAD_BASE, build, section, shared_source, ui_source
+from build_samples_fx import ADDRESS_MAP, ROOT, PAYLOAD_BASE, build, section, shared_source, ui_source, gate_source
 from run_samples_fx_emulator import panel_overlay
 from map_samples_fx import SAMPLE_POOL_CAPACITY
 from test_samples_fx_emulator import install
@@ -57,6 +57,23 @@ class SourceExtractionTests(unittest.TestCase):
     def test_changed_knob_entry_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'knob entry changed'):
             shared_source(self.shared.replace('jsr     0x4006f73a', 'jsr     0x4006f73c'))
+
+
+class GateSourceTests(unittest.TestCase):
+    def test_gate_and_framework_dependencies_are_relocated(self):
+        text = gate_source((ROOT / 'src/model_tg.s').read_text())
+        code = '\n'.join(line.partition('|')[0] for line in text.splitlines())
+        for old in ('0x4049dca0', '0x4049dcbc', '0x4049dccc', '0x40a7883c',
+                    '0x40076082', '0x40fe4278', '0x40140ab0', '0x400732f8', '0x400732ec'):
+            self.assertNotIn(old, code.lower())
+        for new in ('0x404acb14', '0x404acb30', '0x404acb40', '0x4096814c',
+                    '0x40072358', '0x40034030'):
+            self.assertIn(new, code.lower())
+
+    def test_unknown_gate_helper_dependency_is_rejected(self):
+        shared = (ROOT / 'src/model_tg.s').read_text()
+        with self.assertRaisesRegex(ValueError, 'unmapped gate dependency'):
+            gate_source(shared.replace('jsr     0x400732f8', 'jsr     0x40dead00'))
 
 
 class NativeUISourceTests(unittest.TestCase):
@@ -120,6 +137,15 @@ class InjectionSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'hook site differs'):
             install(self.session, self.report, b'payload', self.stock)
 
+    def test_changed_gate_hooks_are_rejected_before_guest_writes(self):
+        self.report['midi_gate'] = True
+        for address in (0x40001154, 0x4000124e, 0x40001320, 0x4003402a):
+            with self.subTest(address=address):
+                self.mem[address] = 0xff
+                with self.assertRaisesRegex(ValueError, 'hook site differs'):
+                    install(self.session, self.report, b'payload', self.stock)
+                self.mem.clear()
+
     def test_changed_capacity_is_rejected_before_guest_writes(self):
         self.mem[0x400A12A6] = 0xff
         with self.assertRaisesRegex(ValueError, 'allocator differs'):
@@ -147,11 +173,13 @@ class PayloadBuildTests(unittest.TestCase):
             self.assertEqual(a, b)
             self.assertFalse(a['hardware_installable'])
             self.assertTrue(a['native_panel_ui'])
+            self.assertTrue(a['midi_gate'])
             self.assertEqual(a['payload_base'], PAYLOAD_BASE)
             self.assertLess(a['payload_bytes'], 65536)
             for label in ('samples_audio', 'samples_mix', 'samples_key', 'page_obj',
                           'sp_encoder', 'sp_render', 'pad_hook', 'rtg_lstep', 'mfx_drv',
-                          'command_knob', 'command_delta', 'command_reset'):
+                          'command_knob', 'command_delta', 'command_reset', 'gate_service',
+                          'gate_tx_buffer', 'gate_tx_byte', 'gate_mode', 'samples_gate_config'):
                 self.assertGreaterEqual(a['symbols'][label], PAYLOAD_BASE)
                 self.assertLess(a['symbols'][label], PAYLOAD_BASE + a['payload_bytes'])
             binary = (Path(folder) / 'a/samples_fx.bin').read_bytes()

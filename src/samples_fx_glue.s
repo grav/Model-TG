@@ -20,6 +20,7 @@ sa_knob:
     movel   command_knob,%d3
     bsr     mfx_knob              | port entry: d0 delta, d3 panel index + 1
 sa_run:
+    bsr     gate_service          | UART ownership and ~5 ms gate expiry
     bsr     rtg_audio
     moveml  %sp@,%d0-%d7/%a0-%a6
     lea.l   %sp@(60),%sp
