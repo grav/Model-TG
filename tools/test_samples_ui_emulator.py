@@ -44,17 +44,6 @@ def main():
         s = Session(paths.gui, paths.syx)
         install(s, report, payload, stock)
         syms = report['symbols']
-        from unicorn import UC_HOOK_CODE
-        from unicorn.m68k_const import UC_M68K_REG_A7
-        acceleration = []
-        def acceleration_probe(uc, address, size, user):
-            stack = uc.reg_read(UC_M68K_REG_A7)
-            caller, _, minimum, maximum = struct.unpack('>IIII', uc.mem_read(stack, 16))
-            if report['payload_base'] <= caller < report['payload_base'] + report['payload_bytes']:
-                acceleration.append({'logical': read('sp_last_encoder'),
-                                     'func': read('rtg_func'), 'minimum': minimum,
-                                     'maximum': maximum})
-        s.m.uc.hook_add(UC_HOOK_CODE, acceleration_probe, begin=0x4006e79a, end=0x4006e79a)
         def read(name):
             return struct.unpack('>I', s.m.uc.mem_read(syms[name], 4))[0]
         def run(ms=150):
@@ -63,8 +52,7 @@ def main():
                 raise RuntimeError(s.halted)
         def capture(label):
             item = {name: read(name) for name in ('page_obj', 'rtg_on', 'rtg_row',
-                    'rtg_edit', 'rtg_latch', 'rtg_lstep', 'rtg_sel', 'mfx_drv',
-                    'rtg_func', 'mfx_filt', 'mfx_fwait', 'mfx_fsteps')}
+                    'rtg_edit', 'rtg_latch', 'rtg_lstep', 'rtg_sel', 'mfx_drv')}
             item['label'] = label
             print(json.dumps(item), flush=True)
             observations.append(item)
@@ -106,61 +94,6 @@ def main():
                 assert read('sp_last_encoder') == logical, (physical, logical)
                 assert read(state) > 0, (physical, state, read(state))
             capture('all-knobs')
-            s.tap(s.code('BACK'))
-            # PR #22: real FUNC input and physical encoders, no mailbox/state writes.
-            func = s.code('FUNCTION')
-            s.press(func); run(100)
-            assert read('rtg_func') == 1
-            for logical, (physical, state) in enumerate(controls, 2):
-                s.turn(physical, 1)
-                assert read(state) == (6 if logical == 10 else 127), (physical, state)
-                s.turn(physical, -1)
-                assert read(state) == 0, (physical, state)
-            capture('func-all-knobs')
-            s.release(func); run(100)
-            assert read('rtg_func') == read('mfx_fwait') == read('mfx_fsteps') == 0
-            s.turn(14, -5)
-            assert read('mfx_filt') & 0x80000000
-            s.press(func); run(100)
-            s.turn(14, 1)
-            assert read('mfx_filt') == 0 and read('mfx_fwait') == 1
-            for click in range(1, 4):
-                # Short-spaced physical events exercise the Filter hold.
-                s.turn(14, 1, after_ms=70)
-                assert read('mfx_filt') == 0 and read('mfx_fsteps') == click
-            s.turn(14, 1, after_ms=70)
-            assert read('mfx_filt') == 127 and read('mfx_fwait') == 0
-            capture('func-filter-four-clicks')
-            s.turn(14, -1)
-            assert read('mfx_filt') == 0 and read('mfx_fwait') == 1
-            for delta, steps in ((-1, -1), (-1, -2), (1, -1)):
-                s.turn(14, delta, after_ms=70)
-                assert read('mfx_filt') == 0
-                assert read('mfx_fsteps') == (steps & 0xffffffff)
-            s.turn(14, -3)
-            assert read('mfx_filt') == 0xffffff81  # -127 LP
-            s.turn(14, 1)
-            assert read('mfx_filt') == 0 and read('mfx_fwait') == 1
-            s.release(func); run(100)
-            assert read('mfx_fwait') == read('mfx_fsteps') == 0
-            s.press(func); run(100)
-            s.turn(14, 1)
-            assert read('mfx_filt') == 127  # fresh gesture may leave zero immediately
-            s.release(func); run(100)
-            s.turn(14, -1)
-            assert 0 < read('mfx_filt') < 127  # ordinary additive control restored
-            s.press(func); run(100)
-            s.turn(14, -1)
-            assert read('mfx_filt') == 0 and read('mfx_fwait') == 1
-            s.tap(s.code('RETRIG'))
-            s.release(func); run(100)  # release outside the page is not tracked
-            assert read('rtg_on') == 0
-            s.press(s.code('SETTINGS')); run(100)
-            s.tap(s.code('RETRIG'), after_ms=100)
-            s.release(s.code('SETTINGS')); run(150)
-            assert read('rtg_on') == 1
-            assert read('rtg_func') == read('mfx_fwait') == read('mfx_fsteps') == 0
-            capture('func-reopen-cleared')
             s.tap(s.code('BACK'))
             # DATA push is stock key code 32 (currently labelled PITCH in DigiEmu).
             s.tap(32)
@@ -218,15 +151,10 @@ def main():
             capture('stock-settings')
             assert read('page_obj') == 0
             s.tap(s.code('BACK'))
-            assert {e['maximum'] for e in acceleration if e['logical'] == 6 and e['func']} == {1}
-            assert {e['maximum'] for e in acceleration if e['logical'] == 6 and not e['func']} == {4}
-            assert {e['maximum'] for e in acceleration if e['logical'] == 1} == {1}
-            assert {e['maximum'] for e in acceleration if e['logical'] not in (1, 6) and e['func']} == {4}
         finally:
             s.close()
             (work / 'ui-results.json').write_text(json.dumps(observations, indent=2) + '\n')
             (work / 'panel-inputs.json').write_text(json.dumps(s.inputs, indent=2) + '\n')
-            (work / 'acceleration.json').write_text(json.dumps(acceleration, indent=2) + '\n')
             with wave.open(str(work / 'audio.wav'), 'wb') as wav:
                 wav.setnchannels(2)
                 wav.setsampwidth(2)

@@ -144,9 +144,6 @@ spo_copy:
     movel   %a4,%a0@(12)
     movel   %a4,page_obj
     clrl    rtg_on
-    clrl    rtg_func              | match PR #22: no stale FUNC gesture on open
-    clrl    mfx_fwait
-    clrl    mfx_fsteps
     movea.l %a0,%a2              | retain holder while clearing stale histories
     moveq   #0,%d2
 spo_histories:
@@ -303,12 +300,7 @@ sp_encoder:
     movel   %d3,sp_last_encoder
     moveq   #4,%d0
     cmpil   #1,%d3
-    beqs    spe_slow
-    tstl    rtg_func
-    beqs    spe_accel
-    cmpil   #6,%d3               | FUNC + Filter counts unaccelerated clicks
     bnes    spe_accel
-spe_slow:
     moveq   #1,%d0
 spe_accel:
     movel   %d0,%sp@-
