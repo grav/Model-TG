@@ -33,7 +33,7 @@ blocks, and replaces the boot-clear function. Boot still clears the complete
 stock BSS, skipping only the aligned payload, and initializes the 4 MiB history
 reservation. Stock CPU cache configuration is unchanged. The filesystem's
 chunk-blanking buffer at `0x401ac760..0x401b0760` remains zero. The payload is
-currently **14,672 bytes**, leaving fifteen cache blocks for stock firmware.
+currently **15,024 bytes**, leaving fifteen cache blocks for stock firmware.
 
 This `.syx` can be checked/imported by ordinary DigiEmu; it needs **no runtime
 injection**. Run **Check firmware**, comparing against the unmodified Samples
@@ -53,8 +53,9 @@ and captured bypass audio was identical over 6.3 seconds. That run has no
 restored factory bank and does not verify the new FX audio at cold-boot addresses.
 DigiEmu warned its bundled checksum code was absent; `elektron-firmware-tool`
 separately reported valid checksums and exact decompressed section round-trip.
-All **42** stock-free port/builder/audit tests passed with DigiEmu's Python, including
-execution of the ColdFire boot-clear routine.
+All **46** stock-free port/builder/audit tests passed with DigiEmu's Python,
+including execution of the ColdFire boot-clear routine and **6,168 snap cases**
+against the standalone-address payload.
 
 **Do not flash a physical Samples.** Container validity and emulator boot do not
 establish hardware safety, CPU headroom or allocator correctness at maximum
@@ -185,6 +186,38 @@ The physical knob mapping follows the stock event indices used by Model-TG:
 | SWING/NUDGE | Vinyl |
 | CHANCE/COND | Flanger |
 
+### FUNC + FX snapping (upstream PR #22)
+
+After opening the retrig page, hold **FUNC** (labelled **FUNCTION** in DigiEmu)
+and turn any FX knob:
+
+| Current control value | Clockwise | Counterclockwise |
+|---|---|---|
+| Negative | 0 | Minimum |
+| Zero | Maximum | Minimum |
+| Positive | Maximum | 0 |
+
+Filter spans **−127..127**, Gate **0..6**, and the remaining controls **0..127**.
+Snapping Filter from either side to zero arms a hold: **four additional net
+clicks** are needed to leave zero. Reversing cancels accumulated travel. Those
+Filter clicks are unaccelerated while FUNC is held; other FX still produce one
+snap per nonzero encoder event. Release FUNC to clear the hold. A fresh FUNC
+gesture beginning at zero can snap immediately to either extreme. Page opening
+also clears stale FUNC/hold state; press FUNC **after** opening the page.
+
+This ports [TinyGregAudio/Model-TG PR #22](https://github.com/TinyGregAudio/Model-TG/pull/22)
+at `10ea337bd2fbdaf2e70841e6b6c776270e57c133`, including both its original snap
+change and four-click Filter follow-up. The shared implementation remains in
+`src/model_tg.s`; Samples performs its own stock-event acceleration in
+`src/samples_fx_ui.s` before calling the direct-delta shared handler. The audio
+processing path and 4 MiB history reservation are unchanged.
+
+The locally built update for this change is **`build/Model-TG-Samples-pr22.syx`**
+(SHA-256 `a2888086e55dda7ace3cfce42b8961d0340bc42d184b860c14c76c9201b42f08`).
+The previous `Model-TG-Samples-experimental.syx` is preserved. The user reports
+that previous base image works on hardware; the new PR #22 build has only been
+validated in the emulator so far. No physical device was flashed by the tools.
+
 REVERB SIZE and DELAY TIME are unused on this page. Master VOLUME remains a
 stock control. Resonance needs the filter engaged to be audible.
 
@@ -199,16 +232,19 @@ refreshed on the next UI event rather than by a dedicated page timer.
 
 ## Automated tests
 
-Verified locally with the factory-enabled Samples 1.13 snapshot: **29 unit
-checks passed**, the native panel integration passed, all four DSP differential
-cases passed, and the real Tk GUI started with live audio and the latchable
-SETTINGS/DATA overlay. The current linked DSP/UI payload is 14,576 bytes.
-These are emulator results, not physical-device validation.
+Verified locally with the factory-enabled Samples 1.13 snapshot: **46 unit
+checks passed**, the expanded native panel integration passed, and all four DSP
+differential cases passed. The standalone PR #22 image also passed DigiEmu's
+stock-comparison bootloader/cold-boot/runtime checks. The snapshot-linked DSP/UI
+payload is **14,928 bytes**; the standalone payload adds startup code and is
+**15,024 bytes**, still fitting one reserved 16 KiB cache block. The earlier Tk
+launcher smoke test confirmed live audio and the latchable SETTINGS/DATA overlay.
+These are emulator results, not hardware validation of the new change.
 
 No firmware is needed for the unit tests:
 
 ```sh
-python3 -m unittest discover -s tools -p 'test_*samples_fx.py'
+python3 -m unittest discover -s tools -p 'test_*samples*.py'
 ```
 
 Run the native panel test against a fresh disposable work directory:
@@ -225,7 +261,12 @@ This test uses **press/release/turn through DigiEmu's real panel input API**.
 It does not set the FX/retrig control state through the debug mailbox. It checks
 opening/closing, momentary newest-held/fallback, track selection, every FX knob,
 DATA row editing, latch, reset, FX returns, global reset, repeated reopen/cleanup
-and Pattern closing. It saves screen PNGs, `audio.wav`, `panel-inputs.json` and
+and Pattern closing. It also checks FUNC snapping on every physical FX encoder,
+both Filter directions, four-click holds, net reversal, release/reopen cleanup,
+and restoration of ordinary additive control. A read-only probe of the stock
+acceleration call verifies that FUNC Filter and DATA receive maximum delta 1,
+while ordinary Filter and the remaining FX retain maximum delta 4. It saves
+screen PNGs, `audio.wav`, `panel-inputs.json`, `acceleration.json` and
 `ui-results.json` under the work directory.
 
 The DSP differential test is retained separately:
